@@ -1,0 +1,19 @@
+.define public GPIO_ADDR 0	// 18 address bits starting at GPIO 0
+.define public GPIO_DIR 19	// set direction of data pin buffer
+.define public GPIO_OE 20	// /OE is at 20 and /CE is 21
+.define public GPIO_DATA 22	// 8 data bits
+
+.define        IRQ_SEL 0
+
+.program wait_sel
+.wrap_target
+idle:
+	mov y, pins		; read in all pins
+	mov osr, y		; copy to osr to do logical shift
+	out null, GPIO_OE	; dump lower bits
+	out x, 2		; "AND" off the 2 bits we want
+	jmp x-- idle		; if X is not zero then /OE or /CE are high
+
+	irq IRQ_SEL	; signal we are active
+
+.wrap
