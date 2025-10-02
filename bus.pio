@@ -6,14 +6,16 @@
 .define        IRQ_SEL 0
 
 .program wait_sel
-.wrap_target
 idle:
 	mov y, pins		; read in all pins
 	mov osr, y		; copy to osr to do logical shift
 	out null, GPIO_OE	; dump lower bits
-	out x, 2		; "AND" off the 2 bits we want
+	out x, 2		; grab the two /OE /CE bits we want
 	jmp x-- idle		; if X is not zero then /OE or /CE are high
 
-	irq IRQ_SEL	; signal we are active
+	irq IRQ_SEL		; signal we are active
 
+.wrap_target
+	mov x, pins		; read all pins again
+	jmp x!=y idle		; if any have changed, restart and check /OE and /CE again
 .wrap
