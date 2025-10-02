@@ -17,6 +17,7 @@ pico_generate_pio_header(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
     pico_stdlib
+    pico_multicore
     hardware_pio
 )
 
