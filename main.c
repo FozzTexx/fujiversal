@@ -94,6 +94,8 @@ void __time_critical_func(romulan)(void)
     data = (addrdata >> (18 + 4)) & 0xFF;
     if ((addr & 0x1fff) < 0x1ffc)
       pio0->txf[SM_READ] = addr & 0xFF;
+    else
+      sio_hw->fifo_wr = addrdata;
   }
 
   return;
@@ -109,8 +111,16 @@ int main()
   stdio_init_all();
 
   while (true) {
+    if (multicore_fifo_rvalid()) {
+      addrdata = multicore_fifo_pop_blocking();
+      addr = addrdata & 0xFFFF;
+      data = (addrdata >> (18 + 4)) & 0xFF;
+      printf("Received $%04x:$%02x\n", addr, data);
+    }
+#if 0
     printf("Waiting %u\n", count++);
     sleep_ms(1000);
+#endif
   }
 
   return 0;
