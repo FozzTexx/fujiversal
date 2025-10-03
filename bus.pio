@@ -10,7 +10,7 @@
 
 .program wait_sel
 idle:
-	wait 1 gpio CE_PIN [31]	; wait for CE, allow cycle to settle
+	wait 1 gpio CE_PIN [5]	; wait for CE, allow cycle to settle
 
 	mov y, pins		; read in all pins
 	;; mov osr, y		; copy to osr to do logical shift

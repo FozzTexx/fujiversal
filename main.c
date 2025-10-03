@@ -94,8 +94,21 @@ void __time_critical_func(romulan)(void)
     data = (addrdata >> (18 + 4)) & 0xFF;
     if ((addr & 0x1fff) < 0x1ffc)
       pio0->txf[SM_READ] = addr & 0xFF;
-    else
-      sio_hw->fifo_wr = addrdata;
+    else {
+      switch (addr & 0x3) {
+      case 0: // Read byte
+        pio0->txf[SM_READ] = sio_hw->fifo_rd;
+        break;
+      case 1: // Read status reg
+        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
+        break;
+      case 2: // Write byte
+        sio_hw->fifo_wr = addrdata;
+        break;
+      case 3: // Write control reg
+        break;
+      }
+    }
   }
 
   return;
@@ -104,19 +117,34 @@ void __time_critical_func(romulan)(void)
 int main()
 {
   uint32_t addrdata, addr, data;
+  int input;
   unsigned int count = 0;
 
 
   multicore_launch_core1(romulan);
   stdio_init_all();
 
+  while (!stdio_usb_connected())
+    ;
+
   while (true) {
+#if 1
     if (multicore_fifo_rvalid()) {
       addrdata = multicore_fifo_pop_blocking();
       addr = addrdata & 0xFFFF;
       data = (addrdata >> (18 + 4)) & 0xFF;
       printf("Received $%04x:$%02x\n", addr, data);
     }
+#endif
+
+#if 1
+    input = getchar_timeout_us(0);
+    if (input != PICO_ERROR_TIMEOUT) {
+      printf("Input: $%02x\n", input);
+      multicore_fifo_push_blocking(input);
+    }
+#endif
+
 #if 0
     printf("Waiting %u\n", count++);
     sleep_ms(1000);
