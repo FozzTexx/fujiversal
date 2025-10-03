@@ -31,6 +31,14 @@ idle:
 
 	mov x, ~null side 1		; set X to all 1s, set DIR_PIN to high
 .wrap_target
+wait_fifo:
+	pull block
+
+have_byte:
+	out pins, DATA_WIDTH		; write byte to GPIO D0-D7
+	mov osr, ~null			; put a whole bunch of ones in OSR
+	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
+
 check_fifo:
 	pull noblock			; if no byte in FIFO then X is copied to OSR
 	mov y, osr			; copy Y to OSR so we can compare
@@ -38,12 +46,7 @@ check_fifo:
 
 	jmp pin check_fifo		; if CE is still enabled check FIFO again
 
-	mov osr, null			; load up 0s
+	;; we have been deselected, switch back to input mode
+	mov osr, null			; load up zeros
 	out pindirs, DATA_WIDTH side 1	; change D0-D7 back to inputs
-	jmp check_fifo			; Go see if there's more data
-
-have_byte:
-	out pins, DATA_WIDTH		; write byte to GPIO D0-D7
-	mov osr, ~null			; put a whole bunch of 1s in OSR
-	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
 .wrap
