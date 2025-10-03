@@ -1,26 +1,49 @@
-.define public GPIO_ADDR 0	// 18 address bits starting at GPIO 0
-.define public GPIO_DIR 19	// set direction of data pin buffer
-.define public GPIO_OE 20	// Output Enable - pin 22 of 27c512, /CSn on MSX slot
-.define public GPIO_CE 21	// Chip Enable - pin 20 of 27c512, /SLTSL on MSX slot
-.define public GPIO_DATA 22	// 8 data bits
+.define public A0_PIN 0	// 18 address bits starting at GPIO 0
+.define public DIR_PIN 19	// set direction of data pin buffer
+.define public OE_PIN 20	// Output Enable - pin 22 of 27c512, /CSn on MSX slot
+.define public CE_PIN 21	// Chip Enable - pin 20 of 27c512, /SLTSL on MSX slot
+.define public D0_PIN 22	// 8 data bits
 .define public PIN_COUNT 32
+.define public DATA_WIDTH 8
 
 .define        IRQ_SEL 0
 
 .program wait_sel
 idle:
-	wait 0 gpio GPIO_CE [31]	; wait for /CE to go low, allow cycle to settle
+	wait 1 gpio CE_PIN [31]	; wait for CE, allow cycle to settle
 
 	mov y, pins		; read in all pins
 	;; mov osr, y		; copy to osr to do logical shift
-	;; out null, GPIO_CE	; dump lower bits
+	;; out null, CE_PIN	; dump lower bits
 	;; out x, 2		; grab the two /OE /CE bits we want
 	;; jmp x-- idle		; if X is not zero then /OE or /CE are high
 
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
-	irq IRQ_SEL		; signal we are active
+	//irq IRQ_SEL		; signal we are active
 
 .wrap_target
 	mov x, pins		; read all pins again
 	jmp x!=y idle		; if any have changed, restart and check /OE and /CE again
+.wrap
+
+.program read
+.side_set 1 opt
+
+	mov x, ~null side 1		; set X to all 1s, set DIR_PIN to high
+.wrap_target
+check_fifo:
+	pull noblock			; if no byte in FIFO then X is copied to OSR
+	mov y, osr			; copy Y to OSR so we can compare
+	jmp x!=y have_byte		; if X and Y are not the same then put byte on bus
+
+	jmp pin check_fifo		; if CE is still enabled check FIFO again
+
+	mov osr, null			; load up 0s
+	out pindirs, DATA_WIDTH side 1	; change D0-D7 back to inputs
+	jmp check_fifo			; Go see if there's more data
+
+have_byte:
+	out pins, DATA_WIDTH		; write byte to GPIO D0-D7
+	mov osr, ~null			; put a whole bunch of 1s in OSR
+	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
 .wrap

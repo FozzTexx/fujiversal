@@ -1,94 +1,116 @@
 #include <stdio.h>
 #include <pico/stdlib.h>
-//#include <pico/multicore.h>
+#include <pico/multicore.h>
 #include <hardware/pio.h>
 #include <hardware/irq.h>
 
 #include "bus.pio.h"
 
-#define DIR_PIN 19
-#define CE_PIN          21   // Chip Enable
-#define OE_PIN          20   // Output Enable
-#define ADDR_PIN        0
-#define DATA_PIN        22
+#define USE_IRQ 0
 
-#define PICO_PIO pio0
-#define PICO_SM 0
+#define SM_WAITSEL 0
+#define SM_READ    1
 
-PIO pio = pio0;
-uint sm = 0;
-
+#if USE_IRQ
 bool selected = 0;
-// --- IRQ Handler ---
 
 void __isr pio_irq_handler()
 {
-  if (pio_interrupt_get(pio, 0)) {
+  if (pio_interrupt_get(pio0, 0)) {
     selected = 1;
     // Clear the PIO IRQ flag
-    pio_interrupt_clear(pio, 0);
+    pio_interrupt_clear(pio0, 0);
   }
 }
+#endif
 
 void setup_pio_irq_logic()
 {
-  uint offset = pio_add_program(pio, &wait_sel_program);
+  pio_sm_config conf;
+  uint offset;
 
 
-  pio_sm_config c = wait_sel_program_get_default_config(offset);
-  sm_config_set_in_pins(&c, 0);
-  sm_config_set_in_shift(&c, true, true, 32);
+  // Give control of DIR_PIN to PIO
+  pio_gpio_init(pio0, DIR_PIN);
 
   // Set analog pins as digital
-  for (int pin = DATA_PIN + 4; pin < DATA_PIN + 8; pin++) {
-    gpio_init(pin);
-    gpio_set_dir(pin, false);   // false = input
-  }
+  for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
+    pio_gpio_init(pio0, pin);
 
-  pio_sm_set_consecutive_pindirs(pio, sm, ADDR_PIN, 18, false);
-  pio_sm_set_consecutive_pindirs(pio, sm, OE_PIN, 2, false);
-  pio_sm_set_consecutive_pindirs(pio, sm, DATA_PIN, 8, false);
+  // Invert /CE pin to make it easer to use JMP in PIO
+  gpio_set_inover(CE_PIN, GPIO_OVERRIDE_INVERT);
 
-  pio_sm_init(pio, sm, offset, &c);
-  pio_sm_set_enabled(pio, sm, true);
-  pio_set_irq0_source_enabled(pio, pis_interrupt0, true);
+  // Setup state machine that checks when we are selected
+  offset = pio_add_program(pio0, &wait_sel_program);
+  conf = wait_sel_program_get_default_config(offset);
+  sm_config_set_in_pins(&conf, 0);
+  sm_config_set_in_shift(&conf, true, true, 32);
+
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, 18, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, OE_PIN, 2, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, 8, false);
+
+  pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
+  pio_sm_set_enabled(pio0, SM_WAITSEL, true);
+
+#if USE_IRQ
+  pio_set_irq0_source_enabled(pio0, pis_interrupt0, true);
   irq_set_exclusive_handler(PIO0_IRQ_0, pio_irq_handler);
   irq_set_enabled(PIO0_IRQ_0, true);
+#endif
+
+  // Setup state machine that handles CPU read by putting byte on bus
+  offset = pio_add_program(pio0, &read_program);
+  conf = read_program_get_default_config(offset);
+
+  sm_config_set_out_pins(&conf, D0_PIN, 8);
+  pio_sm_set_consecutive_pindirs(pio0, SM_READ, DIR_PIN, 1, true);
+  pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, 8, false);
+  sm_config_set_sideset_pins(&conf, DIR_PIN);
+  sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
+
+  // Set JMP pin base to CE (or OE depending on your design)
+  sm_config_set_jmp_pin(&conf, CE_PIN);     // e.g. GPIO20
+
+  pio_sm_init(pio0, SM_READ, offset, &conf);
+  pio_sm_set_enabled(pio0, SM_READ, true);
+
+  return;
+}
+
+void __time_critical_func(romulan)(void)
+{
+  uint32_t addrdata, addr, data;
+
+
+  setup_pio_irq_logic();
+
+  while (true) {
+    while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
+      tight_loop_contents();
+
+    addrdata = pio0->rxf[SM_WAITSEL];
+    addr = addrdata & 0xFFFF;
+    data = (addrdata >> (18 + 4)) & 0xFF;
+    if ((addr & 0x1fff) < 0x1ffc)
+      pio0->txf[SM_READ] = addr & 0xFF;
+  }
 
   return;
 }
 
 int main()
 {
-  unsigned int count = 0;
   uint32_t addrdata, addr, data;
+  unsigned int count = 0;
 
 
+  multicore_launch_core1(romulan);
   stdio_init_all();
 
-  // Set PicoROM data line buffer to input mode, defaults to output :(
-  gpio_init(DIR_PIN);
-  gpio_set_dir(DIR_PIN, GPIO_OUT);
-  gpio_put(DIR_PIN, true);
-
-  setup_pio_irq_logic();
-
   while (true) {
-#if 1
-    if (selected) {
-      //printf("IRQ Fired! Both OE (GPIO %d) and CE (GPIO %d) are LOW.\n", OE_PIN, CE_PIN);
-      selected = 0;
-    }
-#endif
     printf("Waiting %u\n", count++);
-#if 1
-    addrdata = pio_sm_get_blocking(pio, sm);
-    addr = addrdata & 0xFFFF;
-    data = (addrdata >> (18 + 4)) & 0xFF;
-    printf("Received $%04x:$%02x\n", addr, data);
-#else
     sleep_ms(1000);
-#endif
   }
 
   return 0;
