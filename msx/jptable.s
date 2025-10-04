@@ -1,0 +1,14 @@
+	extern	_DISKIO
+	extern	_DISKCHG
+	extern	_GETDPB
+	extern	_CHOICE
+	extern	_DSKFMT
+	extern	_DSKSTP
+
+	ORG	$4010
+	JP	_DISKIO
+	JP	_DISKCHG
+	JP	_GETDPB
+	JP	_CHOICE
+	JP	_DSKFMT
+	JP	_DSKSTP

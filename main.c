@@ -5,11 +5,25 @@
 #include <hardware/irq.h>
 
 #include "bus.pio.h"
+#include "rom.h"
+
+#define ROM_SIZE 0x4000
+#define ROM msx_disk_rom
 
 #define USE_IRQ 0
 
 #define SM_WAITSEL 0
 #define SM_READ    1
+
+#define POW2_CEIL(x_) ({      \
+    unsigned int x = x_; \
+    x -= 1;              \
+    x = x | (x >> 1);    \
+    x = x | (x >> 2);    \
+    x = x | (x >> 4);    \
+    x = x | (x >> 8);    \
+    x = x | (x >>16);    \
+    x + 1; })
 
 #if USE_IRQ
 bool selected = 0;
@@ -80,7 +94,7 @@ void setup_pio_irq_logic()
 
 void __time_critical_func(romulan)(void)
 {
-  uint32_t addrdata, addr, data;
+  uint32_t addrdata, addr, data, msx_slot;
 
 
   setup_pio_irq_logic();
@@ -90,23 +104,32 @@ void __time_critical_func(romulan)(void)
       tight_loop_contents();
 
     addrdata = pio0->rxf[SM_WAITSEL];
+    //sio_hw->fifo_wr = addrdata;
     addr = addrdata & 0xFFFF;
+    msx_slot = addr >> 14;
     data = (addrdata >> (18 + 4)) & 0xFF;
-    if ((addr & 0x1fff) < 0x1ffc)
-      pio0->txf[SM_READ] = addr & 0xFF;
-    else {
-      switch (addr & 0x3) {
-      case 0: // Read byte
-        pio0->txf[SM_READ] = sio_hw->fifo_rd;
-        break;
-      case 1: // Read status reg
-        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
-        break;
-      case 2: // Write byte
-        sio_hw->fifo_wr = addrdata;
-        break;
-      case 3: // Write control reg
-        break;
+
+    if (msx_slot == 1) {
+      if ((addr & (ROM_SIZE - 1)) < ROM_SIZE - 4) {
+        //addr &= ROM_SIZE - 1;
+        // POW2_CEIL is expected to be optimized to a constant, otherwise it's too slow
+        addr &= POW2_CEIL(sizeof(ROM)) - 1;
+        pio0->txf[SM_READ] = ROM[addr];// % sizeof(ROM)];
+      }
+      else {
+        switch (addr & 0x3) {
+        case 0: // Read byte
+          pio0->txf[SM_READ] = sio_hw->fifo_rd;
+          break;
+        case 1: // Read status reg
+          pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
+          break;
+        case 2: // Write byte
+          sio_hw->fifo_wr = addrdata;
+          break;
+        case 3: // Write control reg
+          break;
+        }
       }
     }
   }
