@@ -8,7 +8,7 @@
 #include "rom.h"
 
 #define ROM_SIZE 0x4000
-#define ROM msx_disk_rom
+#define ROM disk_rom
 
 #define USE_IRQ 0
 
@@ -94,7 +94,8 @@ void setup_pio_irq_logic()
 
 void __time_critical_func(romulan)(void)
 {
-  uint32_t addrdata, addr, data, msx_slot;
+  uint32_t addrdata, addr, data, msx_16k_page;
+  uint32_t last_addr = -1;
 
 
   setup_pio_irq_logic();
@@ -106,10 +107,13 @@ void __time_critical_func(romulan)(void)
     addrdata = pio0->rxf[SM_WAITSEL];
     //sio_hw->fifo_wr = addrdata;
     addr = addrdata & 0xFFFF;
-    msx_slot = addr >> 14;
+    if (addr == last_addr)
+      continue;
+
+    msx_16k_page = addr >> 14;
     data = (addrdata >> (18 + 4)) & 0xFF;
 
-    if (msx_slot == 1) {
+    if (msx_16k_page == 1) {
       if ((addr & (ROM_SIZE - 1)) < ROM_SIZE - 4) {
         //addr &= ROM_SIZE - 1;
         // POW2_CEIL is expected to be optimized to a constant, otherwise it's too slow
@@ -132,6 +136,8 @@ void __time_critical_func(romulan)(void)
         }
       }
     }
+
+    last_addr = addr;
   }
 
   return;
@@ -156,15 +162,16 @@ int main()
       addrdata = multicore_fifo_pop_blocking();
       addr = addrdata & 0xFFFF;
       data = (addrdata >> (18 + 4)) & 0xFF;
-      printf("Received $%04x:$%02x\n", addr, data);
+      //printf("Received $%04x:$%02x\n", addr, data);
+      putchar(data);
     }
 #endif
 
 #if 1
     input = getchar_timeout_us(0);
     if (input != PICO_ERROR_TIMEOUT) {
-      printf("Input: $%02x\n", input);
       multicore_fifo_push_blocking(input);
+      //printf("Input: $%02X\n", input);
     }
 #endif
 
