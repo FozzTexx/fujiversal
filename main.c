@@ -7,7 +7,9 @@
 #include "bus.pio.h"
 #include "rom.h"
 
-#define ROM_SIZE 0x4000
+#define IO_BASE 0xBFFC
+
+#define MSX_PAGE_SIZE 0x4000
 #define ROM disk_rom
 
 #define USE_IRQ 0
@@ -94,7 +96,11 @@ void setup_pio_irq_logic()
 
 void __time_critical_func(romulan)(void)
 {
-  uint32_t addrdata, addr, data, msx_16k_page;
+  uint32_t addrdata, addr, data;
+#if 0
+  uint32_t msx_16k_page, page_addr;
+#endif
+  uint32_t rom_offset;
   uint32_t last_addr = -1;
 
 
@@ -110,18 +116,44 @@ void __time_critical_func(romulan)(void)
     if (addr == last_addr)
       continue;
 
+#if 0
     msx_16k_page = addr >> 14;
+    page_addr = addr & (MSX_PAGE_SIZE - 1);
+    rom_offset = MSX_PAGE_SIZE * (msx_16k_page - 1);
+#endif
     data = (addrdata >> (18 + 4)) & 0xFF;
 
+#if 1
+    if (IO_BASE <= addr && addr < IO_BASE + 4) {
+      switch (addr & 0x3) {
+      case 0: // Read byte
+        pio0->txf[SM_READ] = sio_hw->fifo_rd;
+        break;
+      case 1: // Read status reg
+        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
+        break;
+      case 2: // Write byte
+        sio_hw->fifo_wr = addrdata;
+        break;
+      case 3: // Write control reg
+        break;
+      }
+    }
+    else if (MSX_PAGE_SIZE <= addr && addr < MSX_PAGE_SIZE * 3) {
+      rom_offset = addr - MSX_PAGE_SIZE;
+      rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
+      pio0->txf[SM_READ] = ROM[rom_offset];
+    }
+#else
+#if 0
     if (msx_16k_page == 1) {
-      if ((addr & (ROM_SIZE - 1)) < ROM_SIZE - 4) {
-        //addr &= ROM_SIZE - 1;
+      if ((page_addr) < MSX_PAGE_SIZE - 4) {
         // POW2_CEIL is expected to be optimized to a constant, otherwise it's too slow
-        addr &= POW2_CEIL(sizeof(ROM)) - 1;
-        pio0->txf[SM_READ] = ROM[addr];// % sizeof(ROM)];
+        page_addr &= POW2_CEIL(sizeof(ROM)) - 1;
+        pio0->txf[SM_READ] = ROM[page_addr];// % sizeof(ROM)];
       }
       else {
-        switch (addr & 0x3) {
+        switch (page_addr & 0x3) {
         case 0: // Read byte
           pio0->txf[SM_READ] = sio_hw->fifo_rd;
           break;
@@ -136,6 +168,14 @@ void __time_critical_func(romulan)(void)
         }
       }
     }
+#else
+    if (msx_16k_page >= 1 && msx_16k_page <= 2) {
+      page_addr += rom_offset;
+      page_addr &= POW2_CEIL(sizeof(ROM)) - 1;
+      pio0->txf[SM_READ] = ROM[page_addr];// % sizeof(ROM)];
+    }
+#endif
+#endif
 
     last_addr = addr;
   }
