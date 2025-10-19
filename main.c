@@ -97,9 +97,6 @@ void setup_pio_irq_logic()
 void __time_critical_func(romulan)(void)
 {
   uint32_t addrdata, addr, data;
-#if 0
-  uint32_t msx_16k_page, page_addr;
-#endif
   uint32_t rom_offset;
   uint32_t last_addr = -1;
 
@@ -116,14 +113,8 @@ void __time_critical_func(romulan)(void)
     if (addr == last_addr)
       continue;
 
-#if 0
-    msx_16k_page = addr >> 14;
-    page_addr = addr & (MSX_PAGE_SIZE - 1);
-    rom_offset = MSX_PAGE_SIZE * (msx_16k_page - 1);
-#endif
     data = (addrdata >> (18 + 4)) & 0xFF;
 
-#if 1
     if (IO_BASE <= addr && addr < IO_BASE + 4) {
       switch (addr & 0x3) {
       case 0: // Read byte
@@ -144,38 +135,6 @@ void __time_critical_func(romulan)(void)
       rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       pio0->txf[SM_READ] = ROM[rom_offset];
     }
-#else
-#if 0
-    if (msx_16k_page == 1) {
-      if ((page_addr) < MSX_PAGE_SIZE - 4) {
-        // POW2_CEIL is expected to be optimized to a constant, otherwise it's too slow
-        page_addr &= POW2_CEIL(sizeof(ROM)) - 1;
-        pio0->txf[SM_READ] = ROM[page_addr];// % sizeof(ROM)];
-      }
-      else {
-        switch (page_addr & 0x3) {
-        case 0: // Read byte
-          pio0->txf[SM_READ] = sio_hw->fifo_rd;
-          break;
-        case 1: // Read status reg
-          pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
-          break;
-        case 2: // Write byte
-          sio_hw->fifo_wr = addrdata;
-          break;
-        case 3: // Write control reg
-          break;
-        }
-      }
-    }
-#else
-    if (msx_16k_page >= 1 && msx_16k_page <= 2) {
-      page_addr += rom_offset;
-      page_addr &= POW2_CEIL(sizeof(ROM)) - 1;
-      pio0->txf[SM_READ] = ROM[page_addr];// % sizeof(ROM)];
-    }
-#endif
-#endif
 
     last_addr = addr;
   }
@@ -197,7 +156,6 @@ int main()
     ;
 
   while (true) {
-#if 1
     if (multicore_fifo_rvalid()) {
       addrdata = multicore_fifo_pop_blocking();
       addr = addrdata & 0xFFFF;
@@ -205,20 +163,12 @@ int main()
       //printf("Received $%04x:$%02x\n", addr, data);
       putchar(data);
     }
-#endif
 
-#if 1
     input = getchar_timeout_us(0);
     if (input != PICO_ERROR_TIMEOUT) {
       multicore_fifo_push_blocking(input);
       //printf("Input: $%02X\n", input);
     }
-#endif
-
-#if 0
-    printf("Waiting %u\n", count++);
-    sleep_ms(1000);
-#endif
   }
 
   return 0;
