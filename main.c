@@ -151,6 +151,7 @@ int main()
 
   multicore_launch_core1(romulan);
   stdio_init_all();
+  stdio_set_translate_crlf(&stdio_usb, false);
 
   while (!stdio_usb_connected())
     ;

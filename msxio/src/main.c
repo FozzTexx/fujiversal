@@ -1,14 +1,9 @@
 #include "portio.h"
+#include "hexdump.h"
 #include <stdio.h>
 #include <input.h>
 
-#define IO_OFFSET  (0x4000 + 0x3FFC)
-#define IO_GETC    (IO_OFFSET + 0)
-#define IO_STATUS  (IO_OFFSET + 1)
-#define IO_PUTC    (IO_OFFSET + 2)
-#define IO_CONTROL (IO_OFFSET + 3)
-
-char buffer[32];
+char buffer[512];
 
 void main()
 {
@@ -25,36 +20,21 @@ void main()
       port_putc(c);
     }
 
-#if 0
-    c = port_getc();
-    if (c != -1)
-      printf("Received: $%02X\n", c);
-#elif 0
-    c = *((unsigned char *) IO_STATUS);
-    if (c & 0x80) {
-      printf("S: %02x\n", c);
-      c = *((unsigned char *) IO_GETC);
-      printf("read: $%02X\n", c);
-    }
-#elif 0
-    c = port_getc_timeout(60);
-    if (c != -1)
-      printf("RX: $%02X\n", c);
-  #if 0
-    else
-      printf("timeout\n");
-  #endif
-#elif 1
-    rlen = port_getbuf(buffer, 16, 60);
+    rlen = port_getbuf(buffer, sizeof(buffer), 60);
     if (rlen) {
       printf("count: %u\n", rlen);
+#if 0
       for (idx = 0; idx < rlen; idx++)
         printf("$%02X ", buffer[idx]);
       printf("\n");
+#endif
+      if (rlen <= 16)
+        hexdump(buffer, rlen);
+      printf("sending back\n");
+      port_putbuf(buffer, rlen);
     }
     else
       printf("timeout\n");
-#endif
   }
 
   return;
