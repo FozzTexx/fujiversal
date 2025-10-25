@@ -17,6 +17,8 @@
 #define SM_WAITSEL 0
 #define SM_READ    1
 
+#define RING_SIZE 1024
+
 #define POW2_CEIL(x_) ({      \
     unsigned int x = x_; \
     x -= 1;              \
@@ -147,6 +149,8 @@ int main()
   uint32_t addrdata, addr, data;
   int input;
   unsigned int count = 0;
+  unsigned char ring_buffer[RING_SIZE];
+  unsigned ring_in = 0, ring_out = 0;
 
 
   multicore_launch_core1(romulan);
@@ -167,8 +171,15 @@ int main()
 
     input = getchar_timeout_us(0);
     if (input != PICO_ERROR_TIMEOUT) {
-      multicore_fifo_push_blocking(input);
+      ring_buffer[ring_in] = input;
+      ring_in = (ring_in + 1) % sizeof(ring_buffer);
       //printf("Input: $%02X\n", input);
+    }
+
+    if (ring_in != ring_out) {
+      bool sent = multicore_fifo_push_timeout_us(ring_buffer[ring_out], 0);
+      if (sent)
+        ring_out = (ring_out + 1) % sizeof(ring_buffer);
     }
   }
 
