@@ -57,7 +57,7 @@ def main():
 
   recv_data = []
   sent_data = []
-  last_recv = 0
+  last_recv = first_recv = 0
   while True:
     if select.select([sys.stdin, ], [], [], 0.0)[0]:
       x = sys.stdin.read(1)[0]
@@ -98,16 +98,20 @@ def main():
     if ser.in_waiting:
       recv_data.extend(ser.read())
       last_recv = time.time()
+      if not first_recv:
+        first_recv = last_recv
 
     if recv_data:
       now = time.time()
       delta = now - last_recv
       if delta > 1 / cps * 10:
-        print(f"Received {len(recv_data)} of {len(sent_data)}")
+        print(f"Received {len(recv_data)} of {len(sent_data)}  CPS:",
+              len(recv_data) / (now - first_recv))
         mismatch = [idx for idx, (a, b) in enumerate(zip(sent_data, recv_data)) if a != b]
         hexdump(recv_data, highlight=mismatch, color="white", on_color="on_red")
         recv_data = []
         sent_data = []
+        first_recv = 0
 
   print("Quitting")
   termios.tcsetattr(sys.stdin, termios.TCSADRAIN, orig_settings)
