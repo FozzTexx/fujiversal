@@ -7,6 +7,11 @@
 #define PORTC IOPORT+2
 #define PCTRL IOPORT+3
 
+#define OUTBUF_FULL 0x80 // i8255 wants to send, /OBF, output active low
+#define OUTBUF_ACK  0x40 // ESP32 received the byte, /ACK, input active low
+#define INBUF_FULL  0x20 // i8255 received the byte, IBF, output active high
+#define INBUF_GET   0x10 // ESP32 wants to send, /STB, input active low
+
 void port_init()
 {
   z80_outp(PCTRL,0xC0);
@@ -26,7 +31,7 @@ int port_getc()
   int b = -1;
   int c = z80_inp(PORTC);
 
-  if (c & 0x20) {
+  if (c & INBUF_FULL) {
     b = z80_inp(PORTA);
   }
 
@@ -49,7 +54,7 @@ uint16_t port_getbuf(void *buf, uint16_t len, uint16_t timeout)
   int b;
   uint8_t *ptr = (uint8_t *) buf;
 
-
+`
   for (idx = 0; idx < len; idx++) {
     b = port_getc_timeout(timeout);
     if (b < 0)
@@ -62,7 +67,7 @@ uint16_t port_getbuf(void *buf, uint16_t len, uint16_t timeout)
 
 void port_putc(uint8_t c)
 {
-  while (z80_inp(PORTC) & 0x80); // Wait for ready to handle byte
+  while (z80_inp(PORTC) & OUTBUF_ACK); // Wait for ready to handle byte
   z80_outp(PORTA,c);
   return;
 }
