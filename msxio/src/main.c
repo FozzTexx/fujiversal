@@ -12,6 +12,8 @@ void main()
   unsigned int rlen, idx;
 
 
+  port_init();
+
   printf("Waiting for data\n");
   while (1) {
     c = getk();

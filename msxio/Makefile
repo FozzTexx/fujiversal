@@ -1,5 +1,6 @@
-PRODUCT = disk
-PLATFORMS = msxrom
+PRODUCT = commstst
+#PLATFORMS = msxrom
+PLATFORMS = h89-cpm
 
 # You can run 'make <platform>' to build for a specific platform,
 # or 'make <platform>/<target>' for a platform-specific target.
