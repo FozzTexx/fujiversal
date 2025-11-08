@@ -48,7 +48,7 @@ def main():
 
   cps = max_cps = args.bps / 10
   seconds_per_char = 1 / max_cps
-  ser = serial.Serial(args.serial, baudrate=args.bps, rtscts=True)
+  ser = serial.Serial(args.serial, baudrate=args.bps, rtscts=False)#True)
 
   orig_settings = termios.tcgetattr(sys.stdin)
   tty.setcbreak(sys.stdin)
