@@ -76,7 +76,12 @@ void setup_pio_irq_logic()
   for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
     pio_gpio_init(pio0, pin);
 
-  // Invert /CE pin to make it easer to use JMP in PIO
+  // Initialize the Address pins
+  for (int pin = A0_PIN; pin < A0_PIN + 16; pin++)
+    pio_gpio_init(pio0, pin);
+    
+// Invert /CE pin to make it easer to use JMP in PIO
+  pio_gpio_init(pio0, CE_PIN);
   gpio_set_inover(CE_PIN, GPIO_OVERRIDE_INVERT);
 
   // Setup state machine that checks when we are selected
@@ -86,7 +91,7 @@ void setup_pio_irq_logic()
   sm_config_set_in_shift(&conf, true, true, 32);
 
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, 18, false);
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, OE_PIN, 2, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, CE_PIN, 1, false);
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, 8, false);
 
   pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
@@ -132,7 +137,7 @@ void __time_critical_func(romulan)(void)
       tight_loop_contents();
 
     addrdata = pio0->rxf[SM_WAITSEL];
-    addr = addrdata & 0xFFFF;
+    addr = (addrdata >> 4) & 0xFFFF;
     if (addr == last_addr)
       continue;
 
@@ -274,7 +279,7 @@ int main()
   while (true) {
     if (multicore_fifo_rvalid()) {
       addrdata = multicore_fifo_pop_blocking();
-      addr = addrdata & 0xFFFF;
+      addr = (addrdata >> 4) & 0xFFFF;
       data = (addrdata >> (18 + 4)) & 0xFF;
       //printf("Received $%04x:$%02x\n", addr, data);
       putchar(data);

@@ -1,7 +1,7 @@
-.define public A0_PIN 0	// 18 address bits starting at GPIO 0
-.define public DIR_PIN 19	// set direction of data pin buffer
-.define public OE_PIN 20	// Output Enable - pin 22 of 27c512, /CSn on MSX slot
-.define public CE_PIN 21	// Chip Enable - pin 20 of 27c512, /SLTSL on MSX slot
+.define public A0_PIN 4	// 18 address bits starting at GPIO 4
+.define public DIR_PIN 30	// set direction of data pin buffer
+.define public OE_PIN 31	// Output Enable - pin 22 of 27c512, /CSn on MSX slot
+.define public CE_PIN 3	// Chip Enable - pin 20 of 27c512, /SLTSL on MSX slot
 .define public D0_PIN 22	// 8 data bits
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
@@ -10,7 +10,7 @@
 
 .program wait_sel
 idle:
-	wait 1 gpio CE_PIN [5]	; wait for CE, allow cycle to settle
+	wait 1 gpio CE_PIN [7]	; wait for CE, allow cycle to settle
 
 	mov y, pins		; read in all pins
 	;; mov osr, y		; copy to osr to do logical shift
