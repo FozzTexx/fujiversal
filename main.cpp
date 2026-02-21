@@ -48,7 +48,8 @@
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
-volatile bool ramrom_needs_activate = false;
+volatile bool userrom_ready = false;
+volatile bool userrom_active = false;
 
 #if USE_IRQ
 bool selected = 0;
@@ -126,7 +127,6 @@ void __time_critical_func(romulan)(void)
 {
   uint32_t addrdata, addr, data;
   uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(ROM));
-  uint8_t *rom_ptr = ROM;
   uint32_t last_addr = -1;
 
 
@@ -141,16 +141,6 @@ void __time_critical_func(romulan)(void)
     if (addr == last_addr)
       continue;
 
-    if (!ramrom_ptr && rom_ptr != ROM)
-      rom_ptr == ROM;
-
-    if (ramrom_needs_activate) {// && addr == RAMROM_ACTIVATE_ADDR) {
-      printf("Activating RAM\n"); // FIXME - why is this print necessary?
-      if (ramrom_ptr)
-        rom_ptr = ramrom_ptr;
-      ramrom_needs_activate = false;
-    }
-
     data = (addrdata >> (18 + 4)) & 0xFF;
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
@@ -160,19 +150,21 @@ void __time_critical_func(romulan)(void)
         pio0->txf[SM_READ] = sio_hw->fifo_rd;
         break;
       case IO_STATUS: // Read status reg
-        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
+        pio0->txf[SM_READ] = (sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00) | (userrom_ready ? 0x40 : 0x00);
         break;
       case IO_PUTC: // Write byte
         sio_hw->fifo_wr = addrdata;
         break;
       case IO_CONTROL: // Write control reg
+        if (data & 0x80)
+          userrom_active = data & 0x01;
         break;
       }
     }
     else if (MSX_PAGE_SIZE <= addr && addr < MSX_PAGE_SIZE * 3) {
       rom_offset = addr - MSX_PAGE_SIZE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
-      pio0->txf[SM_READ] = rom_ptr[rom_offset];
+      pio0->txf[SM_READ] = (userrom_active && ramrom_ptr) ? ramrom_ptr[rom_offset] : ROM[rom_offset];
     }
 
     last_addr = addr;
@@ -212,7 +204,7 @@ void process_command(std::string &buffer)
       printf("Opening RAM at 0x%04x\n", offset);
       ramrom_ptr = &ramrom[offset];
       ramrom_pos = 0;
-      ramrom_needs_activate = false;
+      userrom_ready = false;
       sendReplyPacket(packet->device(), true, nullptr, 0);
     }
     break;
@@ -238,15 +230,16 @@ void process_command(std::string &buffer)
       sendReplyPacket(packet->device(), false, nullptr, 0);
 
     ramrom_pos = -1;
-    ramrom_needs_activate = true;
-    printf("Closing RAM %d\n", ramrom_needs_activate);
+    userrom_ready = true;
+    printf("Closing RAM %d\n", userrom_ready);
     sendReplyPacket(packet->device(), true, nullptr, 0);
     break;
 
   case FUJICMD_RESET:
     ramrom_pos = -1;
     ramrom_ptr = nullptr;
-    ramrom_needs_activate = false;
+    userrom_ready = false;
+    userrom_active = false;
     break;
 
   default:
