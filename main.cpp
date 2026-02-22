@@ -156,8 +156,10 @@ void __time_critical_func(romulan)(void)
         sio_hw->fifo_wr = addrdata;
         break;
       case IO_CONTROL: // Write control reg
-        if (data & 0x80)
+        if (data & 0x80) {
           userrom_active = data & 0x01;
+          printf("Activating RAM\n"); // FIXME - why is this print necessary?
+        }
         break;
       }
     }
