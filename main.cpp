@@ -160,7 +160,6 @@ void __time_critical_func(romulan)(void)
         if (data & 0x80) {
           userrom_active = data & 0x01;
           __dsb();  // Data Sync Barrier
-          //printf("Activating RAM\n"); // FIXME - why is this print necessary?
         }
         break;
       }
