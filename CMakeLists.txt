@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.18)
 
+set(PICO_BOARD pico2)
+set(PICO_CHIP rp2350)
+set(PICO_PLATFORM rp2350-arm-s)
+
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+set(toolchainVersion 14_2_Rel1)
+set(picotoolVersion 2.2.0-a4)
 
 project(fujiversal C CXX ASM)
 set(CMAKE_C_STANDARD 11)
