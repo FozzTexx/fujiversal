@@ -27,8 +27,8 @@ typedef struct {
 // Layout: [31:22]=data, [21:18]=control, [17:0]=address
 static inline AddrData decode_addrdata(uint32_t addrdata) {
     AddrData result;
-    result.addr = addrdata & 0x3FFFF;  // 18-bit address mask
-    result.data = (addrdata >> (ADDRESS_WIDTH + 4)) & 0xFF;
+    result.addr = (addrdata >> 4) & 0xFFFF;
+    result.data = (addrdata >> (18 + 4)) & 0xFF;
     return result;
 }
 
