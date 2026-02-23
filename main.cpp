@@ -1,8 +1,23 @@
-#include "bus.pio.h"
+#if defined(BOARD_picorom)
+#include "bus_picorom.pio.h"
+#elif defined(BOARD_msxwaveshare2350b)
+#include "bus_msxwaveshare2350b.pio.h"
+#else
+#error "No board defined"
+#endif
 #include "rom.h"
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
+
+// Include board configuration
+#if defined(BOARD_picorom)
+#include "picorom.h"
+#elif defined(BOARD_msxwaveshare2350b)
+#include "msxwaveshare2350b.h"
+#else
+#error "No board defined"
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -85,9 +100,9 @@ void setup_pio_irq_logic()
   sm_config_set_in_pins(&conf, 0);
   sm_config_set_in_shift(&conf, true, true, 32);
 
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, 18, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, ADDRESS_WIDTH, false);
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, OE_PIN, 2, false);
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, 8, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
 
   pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
   pio_sm_set_enabled(pio0, SM_WAITSEL, true);
@@ -102,9 +117,9 @@ void setup_pio_irq_logic()
   offset = pio_add_program(pio0, &read_program);
   conf = read_program_get_default_config(offset);
 
-  sm_config_set_out_pins(&conf, D0_PIN, 8);
+  sm_config_set_out_pins(&conf, D0_PIN, DATA_WIDTH);
   pio_sm_set_consecutive_pindirs(pio0, SM_READ, DIR_PIN, 1, true);
-  pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, 8, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, DATA_WIDTH, false);
   sm_config_set_sideset_pins(&conf, DIR_PIN);
   sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
 
@@ -119,7 +134,8 @@ void setup_pio_irq_logic()
 
 void __time_critical_func(romulan)(void)
 {
-  uint32_t addrdata, addr, data;
+  uint32_t addrdata;
+  AddrData ad;
   uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(ROM));
   uint8_t *rom_ptr = ROM;
   uint32_t last_addr = -1;
@@ -132,8 +148,8 @@ void __time_critical_func(romulan)(void)
       tight_loop_contents();
 
     addrdata = pio0->rxf[SM_WAITSEL];
-    addr = addrdata & 0xFFFF;
-    if (addr == last_addr)
+    ad = decode_addrdata(addrdata);
+    if (ad.addr == last_addr)
       continue;
 
     if (!ramrom_ptr && rom_ptr != ROM)
@@ -146,11 +162,9 @@ void __time_critical_func(romulan)(void)
       ramrom_needs_activate = false;
     }
 
-    data = (addrdata >> (18 + 4)) & 0xFF;
-
     // FIXME - only check IO_BASE if rom_ptr == ROM
-    if (IO_BASE <= addr && addr < IO_BASE + 4) {
-      switch (addr & 0x3) {
+    if (IO_BASE <= ad.addr && ad.addr < IO_BASE + 4) {
+      switch (ad.addr & 0x3) {
       case IO_GETC: // Read byte
         pio0->txf[SM_READ] = sio_hw->fifo_rd;
         break;
@@ -164,13 +178,13 @@ void __time_critical_func(romulan)(void)
         break;
       }
     }
-    else if (MSX_PAGE_SIZE <= addr && addr < MSX_PAGE_SIZE * 3) {
-      rom_offset = addr - MSX_PAGE_SIZE;
+    else if (MSX_PAGE_SIZE <= ad.addr && ad.addr < MSX_PAGE_SIZE * 3) {
+      rom_offset = ad.addr - MSX_PAGE_SIZE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       pio0->txf[SM_READ] = rom_ptr[rom_offset];
     }
 
-    last_addr = addr;
+    last_addr = ad.addr;
   }
 
   return;
@@ -254,7 +268,8 @@ void process_command(std::string &buffer)
 
 int main()
 {
-  uint32_t addrdata, addr, data;
+  uint32_t addrdata;
+  AddrData ad;
   int input;
   unsigned int count = 0;
   unsigned char ring_buffer[RING_SIZE];
@@ -274,10 +289,9 @@ int main()
   while (true) {
     if (multicore_fifo_rvalid()) {
       addrdata = multicore_fifo_pop_blocking();
-      addr = addrdata & 0xFFFF;
-      data = (addrdata >> (18 + 4)) & 0xFF;
-      //printf("Received $%04x:$%02x\n", addr, data);
-      putchar(data);
+      ad = decode_addrdata(addrdata);
+      //printf("Received $%04x:$%02x\n", ad.addr, ad.data);
+      putchar(ad.data);
     }
 
     if (command_buf.size()) {
