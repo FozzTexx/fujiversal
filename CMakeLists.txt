@@ -6,7 +6,7 @@ if(NOT DEFINED BOARD)
 endif()
 
 # Set board type for RP2350-based boards BEFORE importing SDK
-if(BOARD STREQUAL "msxwaveshare2350b")
+if(BOARD STREQUAL "msxrp2350")
     set(PICO_BOARD "pico2" CACHE STRING "Pico board type" FORCE)
     set(PICO_PLATFORM "rp2350-arm-s" CACHE STRING "Pico platform" FORCE)
     set(PICO_CHIP "rp2350" CACHE STRING "Pico chip" FORCE)

@@ -26,10 +26,10 @@ upload: $(BUILD_DIR)/$(FIRMWARE)
 picorom:
 	$(MAKE) BOARD=picorom
 
-msxwaveshare2350b:
-	$(MAKE) BOARD=msxwaveshare2350b
+msxrp2350:
+	$(MAKE) BOARD=msxrp2350
 
-all: picorom msxwaveshare2350b
+all: picorom msxrp2350
 
 clean:
 	rm -rf build

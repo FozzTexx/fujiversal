@@ -1,7 +1,7 @@
 #if defined(BOARD_picorom)
 #include "picorom.pio.h"
-#elif defined(BOARD_msxwaveshare2350b)
-#include "msxwaveshare2350b.pio.h"
+#elif defined(BOARD_msxrp2350)
+#include "msxrp2350.pio.h"
 #else
 #error "No board defined"
 #endif
@@ -13,8 +13,8 @@
 // Include board configuration
 #if defined(BOARD_picorom)
 #include "picorom.h"
-#elif defined(BOARD_msxwaveshare2350b)
-#include "msxwaveshare2350b.h"
+#elif defined(BOARD_msxrp2350)
+#include "msxrp2350.h"
 #else
 #error "No board defined"
 #endif

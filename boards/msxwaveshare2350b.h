@@ -1,9 +1,9 @@
-#ifndef BOARD_MSXWAVESHARE2350B_H
-#define BOARD_MSXWAVESHARE2350B_H
+#ifndef BOARD_msxrp2350_H
+#define BOARD_msxrp2350_H
 
 #include <stdint.h>
 
-// GPIO Pin Definitions for msxwaveshare2350b board
+// GPIO Pin Definitions for msxrp2350 board
 #define A0_PIN 4
 #define DIR_PIN 30
 #define OE_PIN 31
@@ -15,7 +15,7 @@
 #define WAIT_CYCLES 8
 
 // Board identification
-#define PICO_BOARD_NAME "msxwaveshare2350b"
+#define PICO_BOARD_NAME "msxrp2350"
 
 // a struct to hold both address and data
 typedef struct {
@@ -32,4 +32,4 @@ static inline AddrData decode_addrdata(uint32_t addrdata) {
     return result;
 }
 
-#endif // BOARD_MSXWAVESHARE2350B_H
+#endif // BOARD_msxrp2350_H
