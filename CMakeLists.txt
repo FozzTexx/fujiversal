@@ -28,41 +28,25 @@ add_executable(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/boards)
 target_compile_definitions(${PROJECT_NAME} PRIVATE BOARD_${BOARD})
 
-# Generate board-specific PIO file
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}.h" BOARD_CONFIG)
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/bus.pio" PIO_TEMPLATE)
-string(REGEX MATCH "#define A0_PIN ([0-9]+)" _ "${BOARD_CONFIG}")
-set(A0_PIN_VAL ${CMAKE_MATCH_1})
-string(REGEX MATCH "#define DIR_PIN ([0-9]+)" _ "${BOARD_CONFIG}")
-set(DIR_PIN_VAL ${CMAKE_MATCH_1})
-string(REGEX MATCH "#define OE_PIN ([0-9]+)" _ "${BOARD_CONFIG}")
-set(OE_PIN_VAL ${CMAKE_MATCH_1})
-string(REGEX MATCH "#define CE_PIN ([0-9]+)" _ "${BOARD_CONFIG}")
-set(CE_PIN_VAL ${CMAKE_MATCH_1})
-string(REGEX MATCH "#define D0_PIN ([0-9]+)" _ "${BOARD_CONFIG}")
-set(D0_PIN_VAL ${CMAKE_MATCH_1})
-string(REGEX MATCH "#define PIN_COUNT ([0-9]+)" _ "${BOARD_CONFIG}")
-set(PIN_COUNT_VAL ${CMAKE_MATCH_1})
-string(REGEX MATCH "#define DATA_WIDTH ([0-9]+)" _ "${BOARD_CONFIG}")
-set(DATA_WIDTH_VAL ${CMAKE_MATCH_1})
-string(REGEX MATCH "#define WAIT_CYCLES ([0-9]+)" _ "${BOARD_CONFIG}")
-set(WAIT_CYCLES_VAL ${CMAKE_MATCH_1})
-string(REPLACE "A0_PIN_PLACEHOLDER" "${A0_PIN_VAL}" PIO_TEMPLATE "${PIO_TEMPLATE}")
-string(REPLACE "DIR_PIN_PLACEHOLDER" "${DIR_PIN_VAL}" PIO_TEMPLATE "${PIO_TEMPLATE}")
-string(REPLACE "OE_PIN_PLACEHOLDER" "${OE_PIN_VAL}" PIO_TEMPLATE "${PIO_TEMPLATE}")
-string(REPLACE "CE_PIN_PLACEHOLDER" "${CE_PIN_VAL}" PIO_TEMPLATE "${PIO_TEMPLATE}")
-string(REPLACE "D0_PIN_PLACEHOLDER" "${D0_PIN_VAL}" PIO_TEMPLATE "${PIO_TEMPLATE}")
-string(REPLACE "PIN_COUNT_PLACEHOLDER" "${PIN_COUNT_VAL}" PIO_TEMPLATE "${PIO_TEMPLATE}")
-string(REPLACE "DATA_WIDTH_PLACEHOLDER" "${DATA_WIDTH_VAL}" PIO_TEMPLATE "${PIO_TEMPLATE}")
-string(REPLACE "WAIT_PLACEHOLDER" "${WAIT_CYCLES_VAL}" PIO_TEMPLATE "${PIO_TEMPLATE}")
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/bus_${BOARD}.pio" "${PIO_TEMPLATE}")
+# Concatenate board-specific .pio with bus.pio
+set(BOARD_PIO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}.pio")
+set(BUS_PIO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/bus.pio")
+set(GENERATED_PIO_FILE "${CMAKE_CURRENT_BINARY_DIR}/${BOARD}.pio")
 
-pico_generate_pio_header(${PROJECT_NAME}
-    ${CMAKE_CURRENT_BINARY_DIR}/bus_${BOARD}.pio
+add_custom_command(
+    OUTPUT ${GENERATED_PIO_FILE}
+    COMMAND ${CMAKE_COMMAND} -E cat ${BOARD_PIO_FILE} ${BUS_PIO_FILE} > ${GENERATED_PIO_FILE}
+    DEPENDS ${BOARD_PIO_FILE} ${BUS_PIO_FILE}
+    COMMENT "Generating ${BOARD}.pio"
 )
 
-# Add build directory to include path for generated PIO header
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+add_custom_target(generate_pio DEPENDS ${GENERATED_PIO_FILE})
+add_dependencies(${PROJECT_NAME} generate_pio)
+
+# Generate PIO header from concatenated file
+pico_generate_pio_header(${PROJECT_NAME}
+    ${GENERATED_PIO_FILE}
+)
 
 target_link_libraries(${PROJECT_NAME}
     pico_stdlib

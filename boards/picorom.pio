@@ -1,0 +1,10 @@
+;; this file will get prepended to bus.pio
+
+.define public A0_PIN 0
+.define public DIR_PIN 19
+.define public OE_PIN 20
+.define public CE_PIN 21
+.define public D0_PIN 22
+.define public PIN_COUNT 32
+.define public DATA_WIDTH 8
+.define        WAIT 5

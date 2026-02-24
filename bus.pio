@@ -1,16 +1,8 @@
-.define public A0_PIN A0_PIN_PLACEHOLDER
-.define public DIR_PIN DIR_PIN_PLACEHOLDER
-.define public OE_PIN OE_PIN_PLACEHOLDER
-.define public CE_PIN CE_PIN_PLACEHOLDER
-.define public D0_PIN D0_PIN_PLACEHOLDER
-.define public PIN_COUNT PIN_COUNT_PLACEHOLDER
-.define public DATA_WIDTH DATA_WIDTH_PLACEHOLDER
-
 .define        IRQ_SEL 0
 
 .program wait_sel
 idle:
-	wait 1 gpio CE_PIN [WAIT_PLACEHOLDER]	; wait for CE, allow cycle to settle
+	wait 1 gpio CE_PIN [WAIT]	; wait for CE, allow cycle to settle
 
 	mov y, pins		; read in all pins
 	;; mov osr, y		; copy to osr to do logical shift

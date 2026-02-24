@@ -1,7 +1,7 @@
 #if defined(BOARD_picorom)
-#include "bus_picorom.pio.h"
+#include "picorom.pio.h"
 #elif defined(BOARD_msxwaveshare2350b)
-#include "bus_msxwaveshare2350b.pio.h"
+#include "msxwaveshare2350b.pio.h"
 #else
 #error "No board defined"
 #endif
