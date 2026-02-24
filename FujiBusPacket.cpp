@@ -1,68 +1,110 @@
 #include "FujiBusPacket.h"
 
-typedef struct {
-    uint8_t device;   /* Destination Device */
-    uint8_t command;  /* Command */
-    uint16_t length;  /* Total length of packet including header */
-    uint8_t checksum; /* Checksum of entire packet */
-    uint8_t descr;   /* Describes the fields that follow */
-} fujibus_header;
+#include <cstring>   // std::memcpy
+#include <cstddef>   // offsetof
+#include <algorithm> // std::find
+#include <new>
 
-#define FUJI_DESCR_COUNT_MASK    0x07
-#define FUJI_DESCR_32_MASK       0x02
-#define FUJI_DESCR_16_OR_32_MASK 0x04
-#define FUJI_DESCR_ADDTL_MASK    0x80
-
-static uint8_t fieldSizeTable[] = {0, 1, 1, 1, 1, 2, 2, 4};
-static uint8_t numFieldsTable[] = {0, 1, 2, 3, 4, 1, 2, 1};
-
-std::string FujiBusPacket::decodeSLIP(std::string_view input)
+#include <iostream>
+static void dbg_descr(const std::vector<uint8_t>& d)
 {
-    unsigned int idx;
-    uint8_t val;
-    std::string output;
-    output.reserve(input.size());  // worst case, same size
+    std::cerr << "DESCR:";
+    for (auto b : d) std::cerr << " " << std::hex << int(b);
+    std::cerr << std::dec << "\n";
+}
 
-    const uint8_t *ptr = (uint8_t *) input.data();
-    for (idx = 0; idx < input.size(); idx++)
+// On-wire header layout (must stay exactly this size/layout)
+struct fujibus_header {
+    std::uint8_t device;   /* Destination Device */
+    std::uint8_t command;  /* Command */
+    std::uint16_t length;  /* Total length of packet including header */
+    std::uint8_t checksum; /* Checksum of entire packet */
+    std::uint8_t descr;    /* Describes the fields that follow (first descriptor) */
+};
+
+static_assert(sizeof(fujibus_header) == 6, "fujibus_header must be 6 bytes");
+static_assert(offsetof(fujibus_header, checksum) == 4, "checksum offset mismatch");
+
+#define FUJI_DESCR_COUNT_MASK  0x07
+#define FUJI_DESCR_EXCEEDS_U8  0x04
+#define FUJI_DESCR_EXCEEDS_U16 0x02
+#define FUJI_DESCR_ADDTL_MASK  0x80
+#define MAX_BYTES_PER_DESCR 4
+
+static std::uint8_t fieldSizeTable[] = {0, 1, 1, 1, 1, 2, 2, 4};
+static std::uint8_t numFieldsTable[]  = {0, 1, 2, 3, 4, 1, 2, 1};
+
+namespace {
+    // write `size` bytes of `value` (1,2,4) in little-endian
+    inline void write_le(ByteBuffer& buf, std::uint32_t value, std::size_t size)
     {
-        if (ptr[idx] == SLIP_END)
-            break;
+        for (std::size_t i = 0; i < size; ++i)
+            buf.push_back(static_cast<std::uint8_t>((value >> (8 * i)) & 0xFF));
     }
 
-    for (idx++; idx < input.size(); idx++)
+    // read `size` bytes in little-endian from `buf[offset..offset+size)`
+    inline std::uint32_t read_le(const ByteBuffer& buf, std::size_t offset, std::size_t size)
     {
-        val = ptr[idx];
+        std::uint32_t v = 0;
+        for (std::size_t i = 0; i < size; ++i)
+            v |= static_cast<std::uint32_t>(buf[offset + i]) << (8 * i);
+        return v;
+    }
+} // namespace
+
+ByteBuffer FujiBusPacket::decodeSLIP(const ByteBuffer& input) const
+{
+    ByteBuffer output;
+    output.reserve(input.size());  // worst case, same size
+
+    const std::size_t len = input.size();
+    std::size_t idx = 0;
+
+    // Find the first SLIP_END
+    while (idx < len && input[idx] != SLIP_END)
+        ++idx;
+
+    if (idx == len)
+        return {}; // no frame start found
+
+    // Decode from the byte after the first SLIP_END
+    for (++idx; idx < len; ++idx)
+    {
+        std::uint8_t val = input[idx];
         if (val == SLIP_END)
             break;
 
         if (val == SLIP_ESCAPE)
         {
-            idx++;
-            val = ptr[idx];
+            if (++idx >= len)
+                break; // truncated escape
+            val = input[idx];
             if (val == SLIP_ESC_END)
                 output.push_back(SLIP_END);
             else if (val == SLIP_ESC_ESC)
                 output.push_back(SLIP_ESCAPE);
+            // else: ignore malformed escape
         }
         else
+        {
             output.push_back(val);
+        }
     }
 
     return output;
 }
 
-std::string FujiBusPacket::encodeSLIP(std::string_view input)
+ByteBuffer FujiBusPacket::encodeSLIP(const ByteBuffer& input) const
 {
-    unsigned int idx;
-    uint8_t val;
-    std::string output;
-    output.reserve(input.size() * 2);  // worst case, double size
+    ByteBuffer output;
+    output.reserve(input.size() * 2 + 2);  // worst case, double size + 2 ENDs
 
-    output.push_back(SLIP_END);
-    for (idx = 0; idx < input.size(); idx++)
+    // Avoids a compiler warning with GCC 15, which did not like the initial push_back of SLIP_END on a size 0 buffer (even though reserve has it with enough space).
+    output.resize(1);
+    output[0] = SLIP_END;
+
+    for (std::uint8_t val : input)
     {
-        val = input[idx];
         if (val == SLIP_END || val == SLIP_ESCAPE)
         {
             output.push_back(SLIP_ESCAPE);
@@ -72,105 +114,121 @@ std::string FujiBusPacket::encodeSLIP(std::string_view input)
                 output.push_back(SLIP_ESC_ESC);
         }
         else
+        {
             output.push_back(val);
+        }
     }
     output.push_back(SLIP_END);
 
     return output;
 }
 
-uint8_t FujiBusPacket::calcChecksum(const std::string &buf)
+std::uint8_t FujiBusPacket::calcChecksum(const ByteBuffer& buf) const
 {
-    uint16_t idx, chk;
-    uint8_t *ptr = (uint8_t *) buf.data();
+    std::uint16_t chk = 0;
 
-    for (idx = chk = 0; idx < buf.size(); idx++)
-        chk = ((chk + ptr[idx]) >> 8) + ((chk + ptr[idx]) & 0xFF);
-    return (uint8_t) chk;
+    for (std::size_t i = 0; i < buf.size(); ++i)
+    {
+        chk += buf[i];
+        chk = (chk >> 8) + (chk & 0xFF); // fold carry
+    }
+
+    return static_cast<std::uint8_t>(chk);
 }
 
-bool FujiBusPacket::parse(std::string_view input)
+bool FujiBusPacket::parse(const ByteBuffer& input)
 {
-    std::string decoded;
-    fujibus_header *hdr;
-    std::string_view slipEncoded = input;
+    ByteBuffer slipEncoded;
 
-    size_t slipMarker = input.find(SLIP_END);
-    if (slipMarker != std::string::npos)
-        slipEncoded = std::string_view(input).substr(slipMarker);
+    // Find first SLIP_END, and treat the frame as starting there
+    auto it = std::find(input.begin(), input.end(), static_cast<std::uint8_t>(SLIP_END));
+    if (it != input.end())
+        slipEncoded.assign(it, input.end());
+    else
+        slipEncoded = input;
 
     if (slipEncoded.size() < sizeof(fujibus_header) + 2)
         return false;
-    if (((uint8_t) slipEncoded[0]) != SLIP_END || ((uint8_t) slipEncoded.back()) != SLIP_END)
+    if (slipEncoded.front() != SLIP_END || slipEncoded.back() != SLIP_END)
         return false;
 
-    decoded = decodeSLIP(slipEncoded);
+    ByteBuffer decoded = decodeSLIP(slipEncoded);
 
     if (decoded.size() < sizeof(fujibus_header))
         return false;
+
+    // Extract header from the front of decoded
+    fujibus_header *hdr;
     hdr = (fujibus_header *) &decoded[0];
 
     if (hdr->length != decoded.size())
         return false;
 
-    {
-        uint8_t ck1, ck2;
+    // Verify checksum:
+    // - ck1 is the transmitted checksum
+    // - ck2 is computed with the checksum byte zeroed
+    const std::uint8_t ck1 = hdr->checksum;
 
-        // Need to zero out checksum in order to calculate
-        ck1 = hdr->checksum;
-        hdr->checksum = 0;
-        ck2 = calcChecksum(decoded);
-        if (ck1 != ck2)
-            return false;
-    }
+    hdr->checksum = 0;
+    const std::uint8_t ck2 = calcChecksum(decoded);
 
-    _device = static_cast<fujiDeviceID_t>(hdr->device);
+    if (ck1 != ck2)
+        return false;
+
+    _device  = static_cast<fujiDeviceID_t>(hdr->device);
     _command = static_cast<fujiCommandID_t>(hdr->command);
 
+    // ---- Descriptors & params ----
+
+    std::size_t offset = sizeof(fujibus_header);
+    ByteBuffer descrBytes;
+
+    // First descriptor is in the header
+    std::uint8_t dsc = hdr->descr;
+    descrBytes.push_back(dsc);
+
+    // Additional descriptors follow the header whenever bit 7 is set
+    while (dsc & FUJI_DESCR_ADDTL_MASK)
     {
-        unsigned val, offset;
-        std::vector<uint8_t> descr;
+        if (offset >= decoded.size())
+            return false; // malformed
 
-        offset = sizeof(*hdr) - 1;
-        do {
-            val = decoded[offset++];
-            descr.push_back(val & FUJI_DESCR_COUNT_MASK);
-        } while (val & FUJI_DESCR_ADDTL_MASK);
+        dsc = decoded[offset++];
+        descrBytes.push_back(dsc);
+    }
 
-        for (const auto &fieldDesc : descr)
+    // Now decode each descriptor into fields
+    for (std::uint8_t dbyte : descrBytes)
+    {
+        unsigned fieldDesc  = dbyte & FUJI_DESCR_COUNT_MASK; // 0..7
+        unsigned fieldCount = numFieldsTable[fieldDesc];
+        if (!fieldCount)
+            continue;
+
+        unsigned fieldSize  = fieldSizeTable[fieldDesc];
+
+        for (unsigned idx = 0; idx < fieldCount; ++idx)
         {
-            unsigned fieldSize, fieldCount;
-            unsigned idx, jdx;
+            if (offset + fieldSize > decoded.size())
+                return false;
 
-            fieldCount = numFieldsTable[fieldDesc];
-            if (fieldCount)
-            {
-                fieldSize = fieldSizeTable[fieldDesc];
-
-                for (idx = 0; idx < fieldCount; idx++)
-                {
-                    uint32_t val, bt;
-
-                    for (val = jdx = 0; jdx < fieldSize; jdx++)
-                    {
-                        bt = (uint8_t) decoded[offset + idx * fieldSize + jdx];
-                        val |= bt << (8 * jdx);
-                    }
-                    _params.emplace_back(val, fieldSize);
-                }
-
-                offset += idx * fieldSize;
-            }
+            std::uint32_t val = read_le(decoded, offset, fieldSize);
+            _params.emplace_back(val, static_cast<std::uint8_t>(fieldSize));
+            offset += fieldSize;
         }
+    }
 
-        if (offset < decoded.size())
-            _data = decoded.substr(offset);
+    // Remaining bytes (if any) are payload
+    if (offset < decoded.size())
+    {
+        _data.emplace(decoded.begin() + static_cast<std::ptrdiff_t>(offset),
+                      decoded.end());
     }
 
     return true;
 }
 
-std::string FujiBusPacket::serialize()
+ByteBuffer FujiBusPacket::serialize() const
 {
     fujibus_header hdr, *hptr;
 
@@ -180,48 +238,48 @@ std::string FujiBusPacket::serialize()
     hdr.checksum = 0;
     hdr.descr = 0;
 
-    std::string output(sizeof(hdr), '\0');
+    ByteBuffer output(sizeof(hdr), '\0');
 
-    if (_params.size())
+    if (!_params.empty())
     {
-        std::vector<uint8_t> descr;
-        unsigned fieldSize = 0;
-        unsigned idx, jdx, kdx, val;
-        PacketParam *param;
+        ByteBuffer descr;
+        unsigned fieldSize, bytesWritten;
+        unsigned idx, count, val, lenParams;
+        const PacketParam *param;
 
 
-        for (idx = 0; idx < _params.size(); idx++)
+        for (idx = 0, lenParams = _params.size(); idx < lenParams; idx += count)
         {
-            for (jdx = idx; jdx < _params.size(); jdx++)
+            for (count = fieldSize = bytesWritten = 0; count + idx < lenParams; count++)
             {
-                param = &_params[jdx];
-                if (fieldSize && fieldSize != param->size)
+                param = &_params[count + idx];
+                if ((fieldSize && fieldSize != param->size) || bytesWritten == MAX_BYTES_PER_DESCR)
                     break;
                 fieldSize = param->size;
 
-                for (kdx = val = 0; kdx < fieldSize; kdx++, val >>= 8)
-                    output.push_back(val & 0xFF);
+                write_le(output, param->value, param->size);
+                bytesWritten += param->size;
             }
 
-            uint8_t fieldDescr = jdx - idx - 1;
+            uint8_t fieldDescr = count;
             if (fieldSize > 1)
             {
-                fieldDescr |= FUJI_DESCR_16_OR_32_MASK;
-                if (fieldSize == 4)
-                    fieldDescr |= FUJI_DESCR_32_MASK;
-                fieldDescr++;
+                fieldDescr += FUJI_DESCR_EXCEEDS_U8;
+                if (fieldSize > 2)
+                    fieldDescr += FUJI_DESCR_EXCEEDS_U16;
             }
 
-            descr.push_back(fieldDescr);
+            descr.push_back(fieldDescr | FUJI_DESCR_ADDTL_MASK);
         }
 
+        descr.back() -= FUJI_DESCR_ADDTL_MASK;
         hdr.descr = descr[0];
         descr.erase(descr.begin());
-        output.insert(0, (char *) descr.data(), descr.size());
+        output.insert(output.begin() + sizeof(hdr), descr.begin(), descr.end());
     }
 
     if (_data)
-        output += *_data;
+        output.insert(output.end(), _data->begin(), _data->end());
 
     hdr.length = output.size();
     hptr = (fujibus_header *) output.data();
@@ -231,7 +289,8 @@ std::string FujiBusPacket::serialize()
     return encoded;
 }
 
-std::unique_ptr<FujiBusPacket> FujiBusPacket::fromSerialized(std::string_view input)
+// ------------------ Factory ------------------
+std::unique_ptr<FujiBusPacket> FujiBusPacket::fromSerialized(const ByteBuffer& input)
 {
     auto packet = std::make_unique<FujiBusPacket>();
     if (!packet->parse(input))

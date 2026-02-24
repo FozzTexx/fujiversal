@@ -180,7 +180,7 @@ void sendReplyPacket(fujiDeviceID_t source, bool ack, void *data, size_t length)
 {
     FujiBusPacket packet(source, ack ? FUJICMD_ACK : FUJICMD_NAK,
                          ack ? std::string(static_cast<const char*>(data), length) : "");
-    std::string encoded = packet.serialize();
+    ByteBuffer encoded = packet.serialize();
     printf("Sending reply: dev:%02x cmd:%02x len:%04x\n",
            packet.device(), packet.command(), encoded.size());
     fwrite(encoded.data(), 1, encoded.size(), stdout);
@@ -189,7 +189,7 @@ void sendReplyPacket(fujiDeviceID_t source, bool ack, void *data, size_t length)
     return;
 }
 
-void process_command(std::string &buffer)
+void process_command(ByteBuffer &buffer)
 {
   auto packet = FujiBusPacket::fromSerialized(buffer);
 
@@ -261,7 +261,7 @@ int main()
   unsigned ring_in = 0, ring_out = 0;
   uint32_t last_cc_seen = 0, now;
   bool our_command = false;
-  std::string command_buf;
+  ByteBuffer command_buf;
 
 
   multicore_launch_core1(romulan);
