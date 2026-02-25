@@ -16,8 +16,9 @@
 #define IO_BASE    0xFF41
 #define IO_GETC    1
 #define IO_STATUS  0
-#define IO_PUTC    3
-#define IO_CONTROL 2
+#define IO_PUTC    4
+#define IO_CONTROL 3
+#define IO_TOP     (IO_BASE + 5)
 
 #define IO_AVAIL   0x02
 
@@ -156,7 +157,7 @@ void __time_critical_func(romulan)(void)
 
     //printf("ADDRDATA 0x%08x %04x\r\n", addrdata & 0x3C0000, addr);
     bool for_us = !(addrdata & (1 << OE_PIN));
-    for_us |= IO_BASE <= addr && addr < IO_BASE + 4;
+    for_us |= IO_BASE <= addr && addr < IO_TOP;
 #if 0
     if (!for_us) ///*(addr & 0xFF00) != 0xFF00 &&*/ addrdata & (1 << OE_PIN))
       continue;
@@ -176,7 +177,7 @@ void __time_critical_func(romulan)(void)
     data = (addrdata >> (18 + 4)) & 0xFF;
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
-    if (IO_BASE <= addr && addr < IO_BASE + 4) {
+    if (IO_BASE <= addr && addr < IO_TOP) {
 #if 1
       switch (addr & 0x3) {
       case IO_GETC: // Read byte
@@ -192,6 +193,7 @@ void __time_critical_func(romulan)(void)
         break;
       }
 #endif
+      printf("ADDR:%04x DATA:%02x\r\n", addr, data);
     }
     else if (for_us && COCO_ROM_BASE <= addr && addr < COCO_ROM_TOP) {
       rom_offset = addr - COCO_ROM_BASE;
