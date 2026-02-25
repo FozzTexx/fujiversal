@@ -1,7 +1,22 @@
 .define public A0_PIN 0	// 18 address bits starting at GPIO 0
 .define public DIR_PIN 19	// set direction of data pin buffer
-.define public OE_PIN 20	// Output Enable - pin 22 of 27c512, /CSn on MSX slot
-.define public CE_PIN 21	// Chip Enable - pin 20 of 27c512, /SLTSL on MSX slot
+;.define public OE_PIN 20	// Output Enable - pin 22 of 27c512, /CSn on MSX slot
+;.define public CE_PIN 21	// Chip Enable - pin 20 of 27c512, /SLTSL on MSX slot
+
+/* ************** TERRIBLE HACK! **************
+
+   The PCB we are currently using for TRS-80 CoCo has /OE and /CE
+   wired together, however CoCo uses TWO separate select lines /CTS
+   /SCS to enable the full memory space of a cartridge **AND** will
+   only enable /SCS on write, never /CTS. Instead, we'll treat address
+   bit 15 as our enable line and check /CTS and deal with filtering in
+   romulan().
+
+ */
+
+.define public OE_PIN 20	// Cartridge Enable - pin 22 of 27c512, /CTS on CoCo slot
+.define public CE_PIN A0_PIN + 15
+
 .define public D0_PIN 22	// 8 data bits
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
@@ -14,9 +29,11 @@ idle:
 
 	mov y, pins		; read in all pins
 	;; mov osr, y		; copy to osr to do logical shift
-	;; out null, CE_PIN	; dump lower bits
+	;; out null, OE_PIN	; dump lower bits
 	;; out x, 2		; grab the two /OE /CE bits we want
-	;; jmp x-- idle		; if X is not zero then /OE or /CE are high
+	;; ;; jmp x-- idle		; if X is not zero then /OE or /CE are high
+	;; jmp !x idle		; if X is zero then both /OE and /CE are high
+	;;        			;   - gpio inverted in main
 
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
 	//irq IRQ_SEL		; signal we are active
@@ -33,7 +50,7 @@ idle:
 .wrap_target
 check_fifo:
 	pull noblock			; if no byte in FIFO then X is copied to OSR
-	mov y, osr			; copy Y to OSR so we can compare
+	mov y, osr			; copy OSR to Y so we can compare
 	jmp x!=y have_byte		; if X and Y are not the same then put byte on bus
 
 	jmp pin check_fifo		; if CE is still enabled check FIFO again

@@ -14,10 +14,12 @@
 #include <string>
 
 #define IO_BASE    0xFF41
-#define IO_GETC    0
-#define IO_STATUS  1
-#define IO_PUTC    2
-#define IO_CONTROL 3
+#define IO_GETC    1
+#define IO_STATUS  0
+#define IO_PUTC    3
+#define IO_CONTROL 2
+
+#define IO_AVAIL   0x02
 
 #define COCO_ROM_BASE 0xC000
 #define COCO_ROM_TOP  0xFF00
@@ -77,8 +79,9 @@ void setup_pio_irq_logic()
   for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
     pio_gpio_init(pio0, pin);
 
-  // Invert /CE pin to make it easer to use JMP in PIO
-  gpio_set_inover(CE_PIN, GPIO_OVERRIDE_INVERT);
+  // Invert /CE and /OE pins to make it easer to use JMP in PIO
+  //gpio_set_inover(CE_PIN, GPIO_OVERRIDE_INVERT);
+  //gpio_set_inover(OE_PIN, GPIO_OVERRIDE_INVERT);
 
   // Setup state machine that checks when we are selected
   offset = pio_add_program(pio0, &wait_sel_program);
@@ -125,17 +128,40 @@ void __time_critical_func(romulan)(void)
   uint8_t *rom_ptr = ROM;
   uint32_t last_addr = -1;
 
-
   setup_pio_irq_logic();
 
   while (true) {
     while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
       tight_loop_contents();
 
+    /* ************** TERRIBLE HACK! **************
+
+       The PCB we are currently using for TRS-80 CoCo has /OE and /CE
+       wired together, however CoCo uses TWO separate select lines
+       /CTS /SCS to enable the full memory space of a cartridge
+       **AND** will only enable /SCS on write, never /CTS. Instead,
+       we'll treat address bit 15 as our CE_PIN line and check
+       /CTS OE_PIN here. In theory the IO register space from
+       $FF00-$FFFF is *always* active, so any IO register access we
+       see is valid.
+
+    */
+
     addrdata = pio0->rxf[SM_WAITSEL];
     addr = addrdata & 0xFFFF;
+#if 0
     if (addr == last_addr)
       continue;
+#endif
+
+    //printf("ADDRDATA 0x%08x %04x\r\n", addrdata & 0x3C0000, addr);
+    bool for_us = !(addrdata & (1 << OE_PIN));
+    for_us |= IO_BASE <= addr && addr < IO_BASE + 4;
+#if 0
+    if (!for_us) ///*(addr & 0xFF00) != 0xFF00 &&*/ addrdata & (1 << OE_PIN))
+      continue;
+    //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
+#endif
 
     if (!ramrom_ptr && rom_ptr != ROM)
       rom_ptr == ROM;
@@ -151,12 +177,13 @@ void __time_critical_func(romulan)(void)
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
     if (IO_BASE <= addr && addr < IO_BASE + 4) {
+#if 1
       switch (addr & 0x3) {
       case IO_GETC: // Read byte
         pio0->txf[SM_READ] = sio_hw->fifo_rd;
         break;
       case IO_STATUS: // Read status reg
-        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
+        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? IO_AVAIL : 0x00;
         break;
       case IO_PUTC: // Write byte
         sio_hw->fifo_wr = addrdata;
@@ -164,11 +191,13 @@ void __time_critical_func(romulan)(void)
       case IO_CONTROL: // Write control reg
         break;
       }
+#endif
     }
-    else if (COCO_ROM_BASE <= addr && addr < COCO_ROM_TOP) {
+    else if (for_us && COCO_ROM_BASE <= addr && addr < COCO_ROM_TOP) {
       rom_offset = addr - COCO_ROM_BASE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       data = pio0->txf[SM_READ] = rom_ptr[rom_offset];
+      //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
     }
     //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
 
