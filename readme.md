@@ -1,8 +1,8 @@
 This repository holds code for Raspberry Pi pico/pico2 to interface between your retro battlestation and Fujinet.  Fujinet is a modern multi io and internet gateway for retro hardware.
 
-Fujiversal emulates the signal of a ROM chip and talks on the CPU bus with the pico gpio and connects to Fujinet by USB serial.
+Fujiversal emulates the signals of a ROM chip and talks on the CPU bus with the pico gpio and connects to Fujinet by USB serial.
 
-There are currently two targets PicoROM and msxrp2350.  We hope to maybe support OneROM as well in the future.
+There are currently two targets picorom and msxrp2350.  We hope to maybe support OneROM as well in the future.
 
 The build commands are:
 
