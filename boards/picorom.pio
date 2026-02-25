@@ -9,3 +9,13 @@
 .define public DATA_WIDTH 8
 .define public ADDRESS_WIDTH 18
 .define public WAIT_CYCLES 5
+
+.program decode_addrdata
+% c-sdk {
+static inline AddrData decode_addrdata(uint32_t addrdata) {
+    AddrData result;
+    result.addr = addrdata & 0x3FFFF;
+    result.data = (addrdata >> (ADDRESS_WIDTH + 4)) & 0xFF;
+    return result;
+}
+%}

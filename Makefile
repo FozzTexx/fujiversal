@@ -17,7 +17,7 @@ SRC = main.cpp FujiBusPacket.cpp FujiBusPacket.h bus.pio fujiDeviceID.h fujiComm
 $(BUILD_DIR)/$(FIRMWARE): $(SRC) $(BUILD_MAKE)
 	defoogi make -C $(BUILD_DIR)
 
-$(BUILD_MAKE): CMakeLists.txt boards/$(BOARD).h
+$(BUILD_MAKE): CMakeLists.txt boards/$(BOARD).pio
 	defoogi cmake -B $(BUILD_DIR) -DBOARD=$(BOARD)
 
 upload: $(BUILD_DIR)/$(FIRMWARE)

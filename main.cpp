@@ -1,23 +1,7 @@
-#if defined(BOARD_picorom)
-#include "picorom.pio.h"
-#elif defined(BOARD_msxrp2350)
-#include "msxrp2350.pio.h"
-#else
-#error "No board defined"
-#endif
 #include "rom.h"
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
-
-// Include board configuration
-#if defined(BOARD_picorom)
-#include "picorom.h"
-#elif defined(BOARD_msxrp2350)
-#include "msxrp2350.h"
-#else
-#error "No board defined"
-#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +11,20 @@
 #include <hardware/irq.h>
 
 #include <string>
+#include <stdint.h>
+
+typedef struct {
+    uint32_t addr;
+    uint8_t data;
+} AddrData;
+
+#if defined(BOARD_picorom)
+#include "picorom.pio.h"
+#elif defined(BOARD_msxrp2350)
+#include "msxrp2350.pio.h"
+#else
+#error "No board defined"
+#endif
 
 #define IO_BASE    0xBFFC
 #define IO_GETC    0
