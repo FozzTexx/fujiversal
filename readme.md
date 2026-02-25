@@ -14,6 +14,6 @@ make ROM_FILE=path_to_rom_file BOARD=msxrp2350
 
 For Fujinet, most likely you will want to build fujinet-config to obtain the rom image for your retro battlestation before building this firmware.
 
-Then you'll write the .uf2 files to your pico with picotool or by holding the button while plugging in the board and copying files to the drive that appears.
+Then you'll write the appropriate .uf2 in build/boards/{BOARD}/ file to your pico with picotool or by holding the button while plugging in the board and copying files to the drive that appears.
 
 Don't forget to check the Fujinet discord channel for the current happenings

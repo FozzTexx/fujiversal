@@ -7,4 +7,5 @@
 .define public D0_PIN 22
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
-.define        WAIT 8
+.define public ADDRESS_WIDTH 18
+.define public WAIT_CYCLES 8

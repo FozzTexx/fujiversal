@@ -3,17 +3,6 @@
 
 #include <stdint.h>
 
-// GPIO Pin Definitions for msxrp2350 board
-#define A0_PIN 4
-#define DIR_PIN 30
-#define OE_PIN 31
-#define CE_PIN 3
-#define D0_PIN 22
-#define PIN_COUNT 32
-#define DATA_WIDTH 8
-#define ADDRESS_WIDTH 18
-#define WAIT_CYCLES 8
-
 // Board identification
 #define PICO_BOARD_NAME "msxrp2350"
 
