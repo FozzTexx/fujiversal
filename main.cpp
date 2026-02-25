@@ -13,13 +13,14 @@
 
 #include <string>
 
-#define IO_BASE    0xBFFC
+#define IO_BASE    0xFF41
 #define IO_GETC    0
 #define IO_STATUS  1
 #define IO_PUTC    2
 #define IO_CONTROL 3
 
-#define MSX_PAGE_SIZE 0x4000
+#define COCO_ROM_BASE 0xC000
+#define COCO_ROM_TOP  0xFF00
 #define ROM disk_rom
 #define ROM_SEG_SIZE 16384
 #define ROM_MAX_SEGS 8
@@ -164,11 +165,12 @@ void __time_critical_func(romulan)(void)
         break;
       }
     }
-    else if (MSX_PAGE_SIZE <= addr && addr < MSX_PAGE_SIZE * 3) {
-      rom_offset = addr - MSX_PAGE_SIZE;
+    else if (COCO_ROM_BASE <= addr && addr < COCO_ROM_TOP) {
+      rom_offset = addr - COCO_ROM_BASE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
-      pio0->txf[SM_READ] = rom_ptr[rom_offset];
+      data = pio0->txf[SM_READ] = rom_ptr[rom_offset];
     }
+    //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
 
     last_addr = addr;
   }
