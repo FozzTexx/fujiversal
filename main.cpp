@@ -80,9 +80,9 @@ void setup_pio_irq_logic()
   for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
     pio_gpio_init(pio0, pin);
 
-  // Invert /CE and /OE pins to make it easer to use JMP in PIO
-  //gpio_set_inover(CE_PIN, GPIO_OVERRIDE_INVERT);
-  //gpio_set_inover(OE_PIN, GPIO_OVERRIDE_INVERT);
+  // Invert /SCS and /CTS pins to make it easer to use JMP in PIO
+  //gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
+  //gpio_set_inover(CTS_PIN, GPIO_OVERRIDE_INVERT);
 
   // Setup state machine that checks when we are selected
   offset = pio_add_program(pio0, &wait_sel_program);
@@ -91,7 +91,7 @@ void setup_pio_irq_logic()
   sm_config_set_in_shift(&conf, true, true, 32);
 
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, 18, false);
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, OE_PIN, 2, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, CTS_PIN, 2, false);
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, 8, false);
 
   pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
@@ -113,8 +113,7 @@ void setup_pio_irq_logic()
   sm_config_set_sideset_pins(&conf, DIR_PIN);
   sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
 
-  // Set JMP pin base to CE (or OE depending on your design)
-  sm_config_set_jmp_pin(&conf, CE_PIN);     // e.g. GPIO20
+  sm_config_set_jmp_pin(&conf, A15_PIN);
 
   pio_sm_init(pio0, SM_READ, offset, &conf);
   pio_sm_set_enabled(pio0, SM_READ, true);
@@ -135,19 +134,6 @@ void __time_critical_func(romulan)(void)
     while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
       tight_loop_contents();
 
-    /* ************** TERRIBLE HACK! **************
-
-       The PCB we are currently using for TRS-80 CoCo has /OE and /CE
-       wired together, however CoCo uses TWO separate select lines
-       /CTS /SCS to enable the full memory space of a cartridge
-       **AND** will only enable /SCS on write, never /CTS. Instead,
-       we'll treat address bit 15 as our CE_PIN line and check
-       /CTS OE_PIN here. In theory the IO register space from
-       $FF00-$FFFF is *always* active, so any IO register access we
-       see is valid.
-
-    */
-
     addrdata = pio0->rxf[SM_WAITSEL];
     addr = addrdata & 0xFFFF;
 #if 0
@@ -156,10 +142,10 @@ void __time_critical_func(romulan)(void)
 #endif
 
     //printf("ADDRDATA 0x%08x %04x\r\n", addrdata & 0x3C0000, addr);
-    bool for_us = !(addrdata & (1 << OE_PIN));
+    bool for_us = !(addrdata & (1 << CTS_PIN));
     for_us |= IO_BASE <= addr && addr < IO_TOP;
 #if 0
-    if (!for_us) ///*(addr & 0xFF00) != 0xFF00 &&*/ addrdata & (1 << OE_PIN))
+    if (!for_us) ///*(addr & 0xFF00) != 0xFF00 &&*/ addrdata & (1 << CTS_PIN))
       continue;
     //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
 #endif

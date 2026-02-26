@@ -1,21 +1,11 @@
 .define public A0_PIN 0	// 18 address bits starting at GPIO 0
+.define public A15_PIN A0_PIN + 15
+
+.define public CLK_PIN 16	// 6809 clock E signal
+.define public RW_PIN 17	// 6809 R/W signal
 .define public DIR_PIN 19	// set direction of data pin buffer
-;.define public OE_PIN 20	// Output Enable - pin 22 of 27c512, /CSn on MSX slot
-;.define public CE_PIN 21	// Chip Enable - pin 20 of 27c512, /SLTSL on MSX slot
-
-/* ************** TERRIBLE HACK! **************
-
-   The PCB we are currently using for TRS-80 CoCo has /OE and /CE
-   wired together, however CoCo uses TWO separate select lines /CTS
-   /SCS to enable the full memory space of a cartridge **AND** will
-   only enable /SCS on write, never /CTS. Instead, we'll treat address
-   bit 15 as our enable line and check /CTS and deal with filtering in
-   romulan().
-
- */
-
-.define public OE_PIN 20	// Cartridge Enable - pin 22 of 27c512, /CTS on CoCo slot
-.define public CE_PIN A0_PIN + 15
+.define public CTS_PIN 20	// Cartridge ROM select
+.define public SCS_PIN 21	// Cartridge IO select
 
 .define public D0_PIN 22	// 8 data bits
 .define public PIN_COUNT 32
@@ -25,14 +15,15 @@
 
 .program wait_sel
 idle:
-	wait 1 gpio CE_PIN [5]	; wait for CE, allow cycle to settle
+	wait 1 gpio A15_PIN [5]	; wait for CE, allow cycle to settle
 
 	mov y, pins		; read in all pins
+
 	;; mov osr, y		; copy to osr to do logical shift
-	;; out null, OE_PIN	; dump lower bits
-	;; out x, 2		; grab the two /OE /CE bits we want
-	;; ;; jmp x-- idle		; if X is not zero then /OE or /CE are high
-	;; jmp !x idle		; if X is zero then both /OE and /CE are high
+	;; out null, CTS_PIN	; dump lower bits
+	;; out x, 2		; grab the two /CTS /SCS bits we want
+	;; ;; jmp x-- idle		; if X is not zero then /CTS or /SCS are high
+	;; jmp !x idle		; if X is zero then both /CTS and /SCS are high
 	;;        			;   - gpio inverted in main
 
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
@@ -40,7 +31,7 @@ idle:
 
 .wrap_target
 	mov x, pins		; read all pins again
-	jmp x!=y idle		; if any have changed, restart and check /OE and /CE again
+	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
 .wrap
 
 .program read
