@@ -53,6 +53,15 @@
 #define ring_append(x) ({ring_buffer[ring_in] = x; \
       ring_in = (ring_in + 1) % sizeof(ring_buffer); })
 
+typedef union {
+  struct {
+    uint32_t addr:16;
+    uint32_t io:6;
+    uint32_t data:8;
+  } __attribute__((packed));
+  uint32_t combined;
+} __attribute__((packed)) BusSignals;
+
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
@@ -127,7 +136,7 @@ void setup_pio_irq_logic()
 
 void __time_critical_func(romulan)(void)
 {
-  uint32_t addrdata, addr, data;
+  BusSignals bus;
   uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(ROM));
   uint8_t *rom_ptr = ROM;
   uint32_t last_addr = -1;
@@ -138,23 +147,23 @@ void __time_critical_func(romulan)(void)
     while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
       tight_loop_contents();
 
-    addrdata = pio0->rxf[SM_WAITSEL];
-    addr = addrdata & 0xFFFF;
+    bus.combined = pio0->rxf[SM_WAITSEL];
 #if 0
     if (addr == last_addr)
       continue;
 #endif
 
-    //printf("ADDRDATA 0x%08x %04x\r\n", addrdata & 0x3C0000, addr);
 #if 0
     bool for_us = (addrdata & (1 << CTS_PIN));
     for_us |= IO_BASE <= addr && addr < IO_TOP;
-#endif
-#if 0
     if (!for_us) ///*(addr & 0xFF00) != 0xFF00 &&*/ addrdata & (1 << CTS_PIN))
       continue;
 #endif
-    //printf("ADDR:%04x DATA:%02x COMBINED:0x%08x\r\n", addr, data, addrdata);
+
+#if 0
+    printf("ADDR:%04x DATA:%02x IO:%02x COMBINED:0x%08x\r\n",
+           bus.addr, bus.data, bus.io, bus.combined);
+#endif
 
     if (!ramrom_ptr && rom_ptr != ROM)
       rom_ptr == ROM;
@@ -166,13 +175,11 @@ void __time_critical_func(romulan)(void)
       ramrom_needs_activate = false;
     }
 
-    data = (addrdata >> (18 + 4)) & 0xFF;
-
     // FIXME - only check IO_BASE if rom_ptr == ROM
-    if (IO_BASE <= addr && addr < IO_TOP) {
-      unsigned io_reg = (addr - IO_BASE) & 0x3;
+    if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
+      unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
 #ifdef RW_PIN
-      unsigned is_write = !(addrdata & (1 << RW_PIN));
+      unsigned is_write = !(bus.combined & (1 << RW_PIN));
 
 
       io_reg |= is_write << 1;
@@ -189,7 +196,7 @@ void __time_critical_func(romulan)(void)
         }
         break;
       case IO_PUTC: // Write byte
-        sio_hw->fifo_wr = addrdata;
+        sio_hw->fifo_wr = bus.combined;
         break;
       case IO_CONTROL: // Write control reg
         break;
@@ -199,15 +206,15 @@ void __time_critical_func(romulan)(void)
              (addrdata >> 16) & 0x3);
 #endif
     }
-    else if (/*for_us &&*/ COCO_ROM_BASE <= addr && addr < COCO_ROM_TOP) {
-      rom_offset = addr - COCO_ROM_BASE;
+    else if (/*for_us &&*/ COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {
+      rom_offset = bus.addr - COCO_ROM_BASE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
-      data = pio0->txf[SM_READ] = rom_ptr[rom_offset];
+      bus.data = pio0->txf[SM_READ] = rom_ptr[rom_offset];
       //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
     }
     //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
 
-    last_addr = addr;
+    last_addr = bus.addr;
   }
 
   return;
@@ -291,7 +298,7 @@ void process_command(ByteBuffer &buffer)
 
 int main()
 {
-  uint32_t addrdata, addr, data;
+  BusSignals bus;
   int input;
   unsigned int count = 0;
   unsigned char ring_buffer[RING_SIZE];
@@ -310,13 +317,11 @@ int main()
 
   while (true) {
     if (multicore_fifo_rvalid()) {
-      addrdata = multicore_fifo_pop_blocking();
-      addr = addrdata & 0xFFFF;
-      data = (addrdata >> (18 + 4)) & 0xFF;
+      bus.combined = multicore_fifo_pop_blocking();
 #if 0
       printf("Received $%04x:$%02x\r\n", addr, data);
 #else
-      putchar(data);
+      putchar(bus.data);
 #endif
     }
 
