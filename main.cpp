@@ -16,11 +16,15 @@
 #define IO_BASE    0xFF41
 #define IO_GETC    1
 #define IO_STATUS  0
-#define IO_PUTC    4
-#define IO_CONTROL 3
-#define IO_TOP     (IO_BASE + 5)
+#define IO_PUTC    3
+#define IO_CONTROL 2
+#ifdef RW_PIN
+#define IO_TOP     (IO_BASE + 2)
+#else
+#define IO_TOP     (IO_BASE + 4)
+#endif
 
-#define IO_AVAIL   0x02
+#define IO_FLAG_AVAIL   0x02
 
 #define COCO_ROM_BASE 0xC000
 #define COCO_ROM_TOP  0xFF00
@@ -81,8 +85,8 @@ void setup_pio_irq_logic()
     pio_gpio_init(pio0, pin);
 
   // Invert /SCS and /CTS pins to make it easer to use JMP in PIO
-  //gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
-  //gpio_set_inover(CTS_PIN, GPIO_OVERRIDE_INVERT);
+  gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
+  gpio_set_inover(CTS_PIN, GPIO_OVERRIDE_INVERT);
 
   // Setup state machine that checks when we are selected
   offset = pio_add_program(pio0, &wait_sel_program);
@@ -136,19 +140,21 @@ void __time_critical_func(romulan)(void)
 
     addrdata = pio0->rxf[SM_WAITSEL];
     addr = addrdata & 0xFFFF;
-#if 0
+#if 1
     if (addr == last_addr)
       continue;
 #endif
 
     //printf("ADDRDATA 0x%08x %04x\r\n", addrdata & 0x3C0000, addr);
-    bool for_us = !(addrdata & (1 << CTS_PIN));
+#if 0
+    bool for_us = (addrdata & (1 << CTS_PIN));
     for_us |= IO_BASE <= addr && addr < IO_TOP;
+#endif
 #if 0
     if (!for_us) ///*(addr & 0xFF00) != 0xFF00 &&*/ addrdata & (1 << CTS_PIN))
       continue;
-    //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
 #endif
+    //printf("ADDR:%04x DATA:%02x COMBINED:0x%08x\r\n", addr, data, addrdata);
 
     if (!ramrom_ptr && rom_ptr != ROM)
       rom_ptr == ROM;
@@ -164,13 +170,23 @@ void __time_critical_func(romulan)(void)
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
     if (IO_BASE <= addr && addr < IO_TOP) {
-#if 1
-      switch (addr & 0x3) {
+      unsigned io_reg = (addr - IO_BASE) & 0x3;
+#ifdef RW_PIN
+      unsigned is_write = !(addrdata & (1 << RW_PIN));
+
+
+      io_reg |= is_write << 1;
+#endif // RW_PIN
+
+      switch (io_reg) {
       case IO_GETC: // Read byte
         pio0->txf[SM_READ] = sio_hw->fifo_rd;
         break;
       case IO_STATUS: // Read status reg
-        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? IO_AVAIL : 0x00;
+        {
+          unsigned avail = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS;
+          pio0->txf[SM_READ] = avail ? IO_FLAG_AVAIL : 0x00;
+        }
         break;
       case IO_PUTC: // Write byte
         sio_hw->fifo_wr = addrdata;
@@ -178,10 +194,12 @@ void __time_critical_func(romulan)(void)
       case IO_CONTROL: // Write control reg
         break;
       }
+#if 0
+      printf("ADDR:%04x DATA:%02x REG:%d A16-17:%d\r\n", addr, data, io_reg,
+             (addrdata >> 16) & 0x3);
 #endif
-      printf("ADDR:%04x DATA:%02x\r\n", addr, data);
     }
-    else if (for_us && COCO_ROM_BASE <= addr && addr < COCO_ROM_TOP) {
+    else if (/*for_us &&*/ COCO_ROM_BASE <= addr && addr < COCO_ROM_TOP) {
       rom_offset = addr - COCO_ROM_BASE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       data = pio0->txf[SM_READ] = rom_ptr[rom_offset];
