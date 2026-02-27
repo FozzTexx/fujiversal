@@ -24,7 +24,8 @@
 #define IO_TOP     (IO_BASE + 4)
 #endif
 
-#define IO_FLAG_AVAIL   0x02
+//#define IO_FLAG_AVAIL   0x02
+#define IO_FLAG_AVAIL   0x80
 
 #define COCO_ROM_BASE 0xC000
 #define COCO_ROM_TOP  0xFF00
@@ -140,7 +141,7 @@ void __time_critical_func(romulan)(void)
 
     addrdata = pio0->rxf[SM_WAITSEL];
     addr = addrdata & 0xFFFF;
-#if 1
+#if 0
     if (addr == last_addr)
       continue;
 #endif
@@ -313,15 +314,18 @@ int main()
       addrdata = multicore_fifo_pop_blocking();
       addr = addrdata & 0xFFFF;
       data = (addrdata >> (18 + 4)) & 0xFF;
-      //printf("Received $%04x:$%02x\n", addr, data);
+#if 1
+      printf("Received $%04x:$%02x\r\n", addr, data);
+#else
       putchar(data);
+#endif
     }
 
     if (command_buf.size()) {
       now = to_ms_since_boot(get_absolute_time());
       // Did we timeout waiting for final SLIP_END?
       if (now - last_cc_seen > 50) {
-        printf("Command timeout\n");
+        printf("Command timeout\r\n");
         for (char c : command_buf)
           ring_append((uint8_t) c);
         command_buf.clear();
@@ -330,6 +334,7 @@ int main()
 
     input = getchar_timeout_us(0);
     if (input != PICO_ERROR_TIMEOUT) {
+      printf("Sending 0x%02x\r\n", input);
       if (!command_buf.size() && input != SLIP_END)
         ring_append(input);
       else {
@@ -343,7 +348,7 @@ int main()
         if (command_buf.size()) {
           // If second char is not a command for us, send command_buf to RBS
           if (command_size == 2 && input != FUJI_DEVICEID_DBC) {
-            printf("Command not us\n");
+            printf("Command not us\r\n");
             for (char c : command_buf)
               ring_append((uint8_t) c);
             command_buf.clear();

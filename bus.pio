@@ -14,9 +14,10 @@
 .define        IRQ_SEL 0
 
 .program wait_sel
+.wrap_target
 idle:
 	;; wait 1 gpio A15_PIN [5]	; wait for CE, allow cycle to settle
-	wait 1 gpio CLK_PIN [3]	; wait for CLK, allow cycle to settle
+	wait 1 gpio CLK_PIN	; wait for CLK
 
 	mov y, pins		; read in all pins
 
@@ -30,9 +31,7 @@ idle:
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
 	//irq IRQ_SEL		; signal we are active
 
-.wrap_target
-	mov x, pins		; read all pins again
-	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
+	wait 0 gpio CLK_PIN	; wait for cycle to end
 .wrap
 
 .program read
