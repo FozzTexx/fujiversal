@@ -13,7 +13,10 @@
 
 #include <string>
 
-#define IO_BASE    0xFF41
+#define COCO_ROM_BASE (0xC000 ^ 0xC000)
+#define COCO_ROM_TOP  (0xFF00 ^ 0xC000)
+
+#define IO_BASE    (0xFF41 & 0xC000)
 #define IO_GETC    1
 #define IO_STATUS  0
 #define IO_PUTC    3
@@ -26,8 +29,6 @@
 
 #define IO_FLAG_AVAIL   0x02
 
-#define COCO_ROM_BASE 0xC000
-#define COCO_ROM_TOP  0xFF00
 #define ROM disk_rom
 #define ROM_SEG_SIZE 16384
 #define ROM_MAX_SEGS 8
@@ -92,13 +93,19 @@ void setup_pio_irq_logic()
 
 
   // Init output pins
-  for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
+  for (int pin = D0_PIN; pin < D0_PIN + DATA_WIDTH; pin++)
     pio_gpio_init(pio0, pin);
   pio_gpio_init(pio0, DIR_PIN);
 
   // Invert /SCS and /CTS pins to make it easer to use JMP in PIO
-  gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
   gpio_set_inover(CTS_PIN, GPIO_OVERRIDE_INVERT);
+#ifdef SCS_PIN
+  gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
+#else // ! SCS_PIN
+  // Invert A15 and A14 pins to make it easer to use JMP in PIO
+  gpio_set_inover(A14_PIN, GPIO_OVERRIDE_INVERT);
+  gpio_set_inover(A15_PIN, GPIO_OVERRIDE_INVERT);
+#endif // SCS_PIN
 
   // Setup state machine that checks when we are selected
   offset = pio_add_program(pio0, &wait_sel_program);
@@ -108,7 +115,7 @@ void setup_pio_irq_logic()
 
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, 18, false);
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, CTS_PIN, 2, false);
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, 8, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
 
   pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
   pio_sm_set_enabled(pio0, SM_WAITSEL, true);
@@ -123,9 +130,9 @@ void setup_pio_irq_logic()
   offset = pio_add_program(pio0, &read_program);
   conf = read_program_get_default_config(offset);
 
-  sm_config_set_out_pins(&conf, D0_PIN, 8);
+  sm_config_set_out_pins(&conf, D0_PIN, DATA_WIDTH);
   pio_sm_set_consecutive_pindirs(pio0, SM_READ, DIR_PIN, 1, true);
-  pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, 8, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, DATA_WIDTH, false);
   sm_config_set_sideset_pins(&conf, DIR_PIN);
   sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
 
@@ -151,13 +158,22 @@ void __time_critical_func(romulan)(void)
       tight_loop_contents();
 
     bus.combined = pio0->rxf[SM_WAITSEL];
+#ifndef SCS_PIN
+    // Uninvert the A15 and A14 bits
+    //bus.combined ^= 3 << A14_PIN;
+#endif // ! SCS_PIN
 #if 0
-    if (addr == last_addr)
+    if (bus.addr == last_addr)
       continue;
 #endif
 
+#if 1
 #if 0
-    bool for_us = bus.cts;
+    if (bus.addr == 0xC000)
+      printf("For us to me! 0x%04x CTS:%d SCS:%d\r\n", bus.addr, bus.cts, bus.scs);
+#endif
+    //bool for_us = bus.cts;
+    bool for_us = bus.combined & (1 << CTS_PIN);
     for_us |= IO_BASE <= bus.addr && bus.addr < IO_TOP;
     if (!for_us)
       continue;
@@ -209,11 +225,10 @@ void __time_critical_func(romulan)(void)
              (bus.combined >> ADDR_WIDTH) & 0x3);
 #endif
     }
-    else if (/*for_us &&*/ COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {
+    else if (COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {
       rom_offset = bus.addr - COCO_ROM_BASE;
-      //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       bus.data = pio0->txf[SM_READ] = rom_ptr[rom_offset];
-      //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
+      printf("ADDR:%04x DATA:%02x\r\n", bus.addr, bus.data);
     }
     //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
 
@@ -322,7 +337,7 @@ int main()
     if (multicore_fifo_rvalid()) {
       bus.combined = multicore_fifo_pop_blocking();
 #if 0
-      printf("Received $%04x:$%02x\r\n", addr, data);
+      printf("Received $%04x:$%02x\r\n", bus.addr, bus.data);
 #else
       putchar(bus.data);
 #endif
