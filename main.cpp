@@ -55,9 +55,14 @@
 
 typedef union {
   struct {
-    uint32_t addr:16;
-    uint32_t io:6;
-    uint32_t data:8;
+    uint32_t addr:ADDR_WIDTH;
+    uint32_t clk:1;
+    uint32_t rw:1;
+    uint32_t expand:1;
+    uint32_t dir:1;
+    uint32_t cts:1;
+    uint32_t scs:1;
+    uint32_t data:DATA_WIDTH;
   } __attribute__((packed));
   uint32_t combined;
 } __attribute__((packed)) BusSignals;
@@ -86,12 +91,10 @@ void setup_pio_irq_logic()
   uint offset;
 
 
-  // Give control of DIR_PIN to PIO
-  pio_gpio_init(pio0, DIR_PIN);
-
-  // Set analog pins as digital
+  // Init output pins
   for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
     pio_gpio_init(pio0, pin);
+  pio_gpio_init(pio0, DIR_PIN);
 
   // Invert /SCS and /CTS pins to make it easer to use JMP in PIO
   gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
@@ -154,15 +157,15 @@ void __time_critical_func(romulan)(void)
 #endif
 
 #if 0
-    bool for_us = (addrdata & (1 << CTS_PIN));
-    for_us |= IO_BASE <= addr && addr < IO_TOP;
-    if (!for_us) ///*(addr & 0xFF00) != 0xFF00 &&*/ addrdata & (1 << CTS_PIN))
+    bool for_us = bus.cts;
+    for_us |= IO_BASE <= bus.addr && bus.addr < IO_TOP;
+    if (!for_us)
       continue;
 #endif
 
 #if 0
-    printf("ADDR:%04x DATA:%02x IO:%02x COMBINED:0x%08x\r\n",
-           bus.addr, bus.data, bus.io, bus.combined);
+    printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d COMBINED:0x%08x\r\n",
+           bus.addr, bus.data, bus.cts, bus.scs, bus.rw, bus.combined);
 #endif
 
     if (!ramrom_ptr && rom_ptr != ROM)
@@ -202,8 +205,8 @@ void __time_critical_func(romulan)(void)
         break;
       }
 #if 0
-      printf("ADDR:%04x DATA:%02x REG:%d A16-17:%d\r\n", addr, data, io_reg,
-             (addrdata >> 16) & 0x3);
+      printf("ADDR:%04x DATA:%02x REG:%d A16-17:%d\r\n", bus.addr, bus.data, io_reg,
+             (bus.combined >> ADDR_WIDTH) & 0x3);
 #endif
     }
     else if (/*for_us &&*/ COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {

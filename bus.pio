@@ -1,8 +1,10 @@
-.define public A0_PIN 0	// 18 address bits starting at GPIO 0
+.define public A0_PIN 0
+.define public A14_PIN A0_PIN + 14
 .define public A15_PIN A0_PIN + 15
 
 .define public CLK_PIN 16	// 6809 clock E signal
 .define public RW_PIN 17	// 6809 R/W signal
+.define public EXP_PIN 18
 .define public DIR_PIN 19	// set direction of data pin buffer
 .define public CTS_PIN 20	// Cartridge ROM select
 .define public SCS_PIN 21	// Cartridge IO select
@@ -10,6 +12,7 @@
 .define public D0_PIN 22	// 8 data bits
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
+.define public ADDR_WIDTH 16
 
 .define        IRQ_SEL 0
 
