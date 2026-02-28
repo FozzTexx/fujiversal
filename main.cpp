@@ -13,10 +13,16 @@
 
 #include <string>
 
-#define COCO_ROM_BASE (0xC000 ^ 0xC000)
-#define COCO_ROM_TOP  (0xFF00 ^ 0xC000)
+#ifdef SCS_PIN
+#define MEM_ADDR(x) (x)
+#else // ! SCS_PIN
+#define MEM_ADDR(x) (x ^ 0xC000)
+#endif // SCS_PIN
 
-#define IO_BASE    (0xFF41 & 0xC000)
+#define COCO_ROM_BASE MEM_ADDR(0xC000)
+#define COCO_ROM_TOP  MEM_ADDR(0xFF00)
+
+#define IO_BASE    MEM_ADDR(0xFF41)
 #define IO_GETC    1
 #define IO_STATUS  0
 #define IO_PUTC    3
@@ -102,6 +108,7 @@ void setup_pio_irq_logic()
 #ifdef SCS_PIN
   gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
 #else // ! SCS_PIN
+  gpio_set_inover(21, GPIO_OVERRIDE_INVERT);
   // Invert A15 and A14 pins to make it easer to use JMP in PIO
   gpio_set_inover(A14_PIN, GPIO_OVERRIDE_INVERT);
   gpio_set_inover(A15_PIN, GPIO_OVERRIDE_INVERT);
@@ -167,7 +174,7 @@ void __time_critical_func(romulan)(void)
       continue;
 #endif
 
-#if 1
+#if 0
 #if 0
     if (bus.addr == 0xC000)
       printf("For us to me! 0x%04x CTS:%d SCS:%d\r\n", bus.addr, bus.cts, bus.scs);
@@ -220,9 +227,10 @@ void __time_critical_func(romulan)(void)
       case IO_CONTROL: // Write control reg
         break;
       }
-#if 0
-      printf("ADDR:%04x DATA:%02x REG:%d A16-17:%d\r\n", bus.addr, bus.data, io_reg,
-             (bus.combined >> ADDR_WIDTH) & 0x3);
+#if 1
+      printf("REG:%d ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d E:%d\r\n",
+             io_reg, bus.addr, bus.data,
+             bus.cts, bus.scs, bus.rw, bus.clk);
 #endif
     }
     else if (COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {
