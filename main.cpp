@@ -174,7 +174,7 @@ void __time_critical_func(romulan)(void)
       continue;
 #endif
 
-#if 0
+#if 1
 #if 0
     if (bus.addr == 0xC000)
       printf("For us to me! 0x%04x CTS:%d SCS:%d\r\n", bus.addr, bus.cts, bus.scs);
@@ -227,7 +227,7 @@ void __time_critical_func(romulan)(void)
       case IO_CONTROL: // Write control reg
         break;
       }
-#if 1
+#if 0
       printf("REG:%d ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d E:%d\r\n",
              io_reg, bus.addr, bus.data,
              bus.cts, bus.scs, bus.rw, bus.clk);
@@ -236,7 +236,9 @@ void __time_critical_func(romulan)(void)
     else if (COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {
       rom_offset = bus.addr - COCO_ROM_BASE;
       bus.data = pio0->txf[SM_READ] = rom_ptr[rom_offset];
+#if 0
       printf("ADDR:%04x DATA:%02x\r\n", bus.addr, bus.data);
+#endif
     }
     //printf("ADDR:%04x DATA:%02x\r\n", addr, data);
 
