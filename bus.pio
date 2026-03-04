@@ -27,8 +27,10 @@ idle:
 	mov osr, y		; copy to osr to do logical shift
 	out null, CTS_PIN	; dump lower bits
 	out x, 2		; grab the two /CTS /SCS bits we want
-	;; jmp x-- idle		; if X is not zero then /CTS or /SCS are high
 	jmp !x idle		; if X is zero then /CTS and /SCS are high
+	;; out null, A14_PIN	; dump lower bits
+	;; out x, 2		; grab the A15 and A14 bits we want
+	;; jmp x-- idle		; if X is not zero then A15 or A14 are low
 				;   - gpio inverted in setup_pio_irq_logic()
 
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO

@@ -10,6 +10,7 @@
 #include <pico/multicore.h>
 #include <hardware/pio.h>
 #include <hardware/irq.h>
+#include <hardware/watchdog.h>
 
 #include <string>
 
@@ -181,11 +182,9 @@ void __time_critical_func(romulan)(void)
     // FIXME - only check IO_BASE if rom_ptr == ROM
     if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
       unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
-#ifdef RW_PIN
-      unsigned is_write = !(bus.combined & (1 << RW_PIN));
-
-
-      io_reg |= is_write << 1;
+#if 0 //def RW_PIN
+      if (!(bus.combined & (1 << RW_PIN)))
+        io_reg |= 2;
 #endif // RW_PIN
 
       switch (io_reg) {
@@ -193,10 +192,7 @@ void __time_critical_func(romulan)(void)
         pio0->txf[SM_READ] = sio_hw->fifo_rd;
         break;
       case IO_STATUS: // Read status reg
-        {
-          unsigned avail = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS;
-          pio0->txf[SM_READ] = avail ? IO_FLAG_AVAIL : 0x00;
-        }
+        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? IO_FLAG_AVAIL : 0x00;
         break;
       case IO_PUTC: // Write byte
         sio_hw->fifo_wr = bus.combined;
@@ -204,12 +200,12 @@ void __time_critical_func(romulan)(void)
       case IO_CONTROL: // Write control reg
         break;
       }
-#if 0
+#if 1
       printf("ADDR:%04x DATA:%02x REG:%d A16-17:%d\r\n", bus.addr, bus.data, io_reg,
              (bus.combined >> ADDR_WIDTH) & 0x3);
 #endif
     }
-    else if (/*for_us &&*/ COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {
+    else if (COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {
       rom_offset = bus.addr - COCO_ROM_BASE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       bus.data = pio0->txf[SM_READ] = rom_ptr[rom_offset];
@@ -306,7 +302,7 @@ int main()
   unsigned int count = 0;
   unsigned char ring_buffer[RING_SIZE];
   unsigned ring_in = 0, ring_out = 0;
-  uint32_t last_cc_seen = 0, now;
+  uint32_t last_cc_seen = 0, last_hb = 0, now;
   bool our_command = false;
   ByteBuffer command_buf;
 
@@ -318,7 +314,17 @@ int main()
   while (!stdio_usb_connected())
     ;
 
+  if (watchdog_caused_reboot())
+    printf("Watchdog rebooted!\r\n");
+
+  watchdog_enable(100, 1);
+
   while (true) {
+    watchdog_update();
+
+    now = to_ms_since_boot(get_absolute_time());
+    if (now - last_hb >= 1000) printf("(1)");
+
     if (multicore_fifo_rvalid()) {
       bus.combined = multicore_fifo_pop_blocking();
 #if 0
@@ -328,6 +334,7 @@ int main()
 #endif
     }
 
+    if (now - last_hb >= 1000) printf("(2)");
     if (command_buf.size()) {
       now = to_ms_since_boot(get_absolute_time());
       // Did we timeout waiting for final SLIP_END?
@@ -339,6 +346,7 @@ int main()
       }
     }
 
+    if (now - last_hb >= 1000) printf("(3)");
     input = getchar_timeout_us(0);
     if (input != PICO_ERROR_TIMEOUT) {
 #if 0
@@ -370,6 +378,7 @@ int main()
       }
     }
 
+    if (now - last_hb >= 1000) printf("(4)");
     if (ring_in != ring_out) {
 #if 0
       printf("Ring send...");
@@ -380,6 +389,11 @@ int main()
 #if 0
       printf(" sent %d\r\n", sent);
 #endif
+    }
+
+    if (now - last_hb >= 1000) {
+      printf("(E)");
+      last_hb = now;
     }
   }
 
