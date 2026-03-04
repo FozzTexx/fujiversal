@@ -14,6 +14,8 @@
 
 #include <string>
 
+#define HEARTBEAT 1
+
 #define IO_BASE    0xFF41
 #define IO_GETC    1
 #define IO_STATUS  0
@@ -182,8 +184,8 @@ void __time_critical_func(romulan)(void)
     // FIXME - only check IO_BASE if rom_ptr == ROM
     if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
       unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
-#if 0 //def RW_PIN
-      if (!(bus.combined & (1 << RW_PIN)))
+#ifdef RW_PIN
+      if (!bus.rw)
         io_reg |= 2;
 #endif // RW_PIN
 
@@ -200,7 +202,7 @@ void __time_critical_func(romulan)(void)
       case IO_CONTROL: // Write control reg
         break;
       }
-#if 1
+#if 0
       printf("ADDR:%04x DATA:%02x REG:%d A16-17:%d\r\n", bus.addr, bus.data, io_reg,
              (bus.combined >> ADDR_WIDTH) & 0x3);
 #endif
@@ -323,7 +325,9 @@ int main()
     watchdog_update();
 
     now = to_ms_since_boot(get_absolute_time());
+#if HEARTBEAT
     if (now - last_hb >= 1000) printf("(1)");
+#endif // HEARTBEAT
 
     if (multicore_fifo_rvalid()) {
       bus.combined = multicore_fifo_pop_blocking();
@@ -334,7 +338,9 @@ int main()
 #endif
     }
 
+#if HEARTBEAT
     if (now - last_hb >= 1000) printf("(2)");
+#endif // HEARTBEAT
     if (command_buf.size()) {
       now = to_ms_since_boot(get_absolute_time());
       // Did we timeout waiting for final SLIP_END?
@@ -346,7 +352,9 @@ int main()
       }
     }
 
+#if HEARTBEAT
     if (now - last_hb >= 1000) printf("(3)");
+#endif // HEARTBEAT
     input = getchar_timeout_us(0);
     if (input != PICO_ERROR_TIMEOUT) {
 #if 0
@@ -378,7 +386,9 @@ int main()
       }
     }
 
+#if HEARTBEAT
     if (now - last_hb >= 1000) printf("(4)");
+#endif // HEARTBEAT
     if (ring_in != ring_out) {
 #if 0
       printf("Ring send...");
@@ -392,7 +402,9 @@ int main()
     }
 
     if (now - last_hb >= 1000) {
+#if HEARTBEAT
       printf("(E)");
+#endif // HEARTBEAT
       last_hb = now;
     }
   }
