@@ -14,6 +14,8 @@
 
 #include <string>
 
+#define BECKER_REV0 0
+
 #define HEARTBEAT 1
 
 #define IO_BASE    0xFF41
@@ -56,6 +58,19 @@
 #define ring_append(x) ({ring_buffer[ring_in] = x; \
       ring_in = (ring_in + 1) % sizeof(ring_buffer); })
 
+#if BECKER_REV0
+typedef union {
+  struct {
+    uint32_t data:DATA_WIDTH;
+    uint32_t addr:ADDR_WIDTH;
+    uint32_t rw:1;
+    uint32_t clk:1;
+    uint32_t cts:1;
+    uint32_t nmi:1;
+  } __attribute__((packed));
+  uint32_t combined;
+} __attribute__((packed)) BusSignals;
+#else // ! BECKER_REV0
 typedef union {
   struct {
     uint32_t addr:ADDR_WIDTH;
@@ -69,6 +84,7 @@ typedef union {
   } __attribute__((packed));
   uint32_t combined;
 } __attribute__((packed)) BusSignals;
+#endif // BECKER_REV0
 
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
@@ -97,11 +113,19 @@ void setup_pio_irq_logic()
   // Init output pins
   for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
     pio_gpio_init(pio0, pin);
+#ifdef DIR_PIN
   pio_gpio_init(pio0, DIR_PIN);
+#endif // DIR_PIN
 
   // Invert /SCS and /CTS pins to make it easer to use JMP in PIO
-  gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
   gpio_set_inover(CTS_PIN, GPIO_OVERRIDE_INVERT);
+#ifdef SCS_PIN
+  gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
+#else // ! SCS_PIN
+  // Invert A15 and A14 pins to make it easer to use JMP in PIO
+  gpio_set_inover(A14_PIN, GPIO_OVERRIDE_INVERT);
+  gpio_set_inover(A15_PIN, GPIO_OVERRIDE_INVERT);
+#endif // SCS_PIN
 
   // Setup state machine that checks when we are selected
   offset = pio_add_program(pio0, &wait_sel_program);
@@ -109,9 +133,14 @@ void setup_pio_irq_logic()
   sm_config_set_in_pins(&conf, 0);
   sm_config_set_in_shift(&conf, true, true, 32);
 
+#if BECKER_REV0
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, ADDR_WIDTH, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, RW_PIN, 4, false);
+#else
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, 18, false);
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, CTS_PIN, 2, false);
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, 8, false);
+#endif // BECKER_REV0
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
 
   pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
   pio_sm_set_enabled(pio0, SM_WAITSEL, true);
@@ -127,10 +156,12 @@ void setup_pio_irq_logic()
   conf = read_program_get_default_config(offset);
 
   sm_config_set_out_pins(&conf, D0_PIN, 8);
+  pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, DATA_WIDTH, false);
+#ifdef DIR_PIN
   pio_sm_set_consecutive_pindirs(pio0, SM_READ, DIR_PIN, 1, true);
-  pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, 8, false);
   sm_config_set_sideset_pins(&conf, DIR_PIN);
   sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
+#endif // DIR_PIN
 
   sm_config_set_jmp_pin(&conf, A15_PIN);
 

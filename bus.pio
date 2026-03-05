@@ -1,15 +1,32 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; PicoROM pinmap
+
+.define public D0_PIN 22
 .define public A0_PIN 0
 .define public A14_PIN A0_PIN + 14
 .define public A15_PIN A0_PIN + 15
 
 .define public CLK_PIN 16	// 6809 clock E signal
 .define public RW_PIN 17	// 6809 R/W signal
-.define public EXP_PIN 18
+.define public EXP_PIN 18	// PicoROM IO expander
 .define public DIR_PIN 19	// set direction of data pin buffer
 .define public CTS_PIN 20	// Cartridge ROM select
 .define public SCS_PIN 21	// Cartridge IO select
 
-.define public D0_PIN 22	// 8 data bits
+; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; ; Becker cart pinmap
+
+; .define public D0_PIN 0
+; .define public A0_PIN 8
+; .define public A14_PIN A0_PIN + 14
+; .define public A15_PIN A0_PIN + 15
+
+; .define public CLK_PIN 25	// 6809 clock E signal
+; .define public RW_PIN 24	// 6809 R/W signal
+; .define public CTS_PIN 26	// Cartridge ROM select
+; .define public NMI_PIN 27	// 6809 NMI signal
+
+
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
 .define public ADDR_WIDTH 16
