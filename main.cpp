@@ -43,6 +43,9 @@
 
 #define RING_SIZE 1024
 
+#define ANALOG_FIRST 26
+#define ANALOG_LAST  29
+
 #define POW2_CEIL(x_) ({      \
     unsigned int x = x_; \
     x -= 1;              \
@@ -64,7 +67,7 @@ typedef union {
     uint32_t rw:1;
     uint32_t clk:1;
     uint32_t cts:1;
-    uint32_t nmi:1;
+    uint32_t scs:1;
   } __attribute__((packed));
   uint32_t combined;
 } __attribute__((packed)) BusSignals;
@@ -108,6 +111,10 @@ void setup_pio_irq_logic()
   uint offset;
 
 
+  // Set analog pins to digital
+  for (int pin = ANALOG_FIRST; pin <= ANALOG_LAST; pin++)
+    pio_gpio_init(pio0, pin);
+
   // Init output pins
   for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
     pio_gpio_init(pio0, pin);
@@ -143,11 +150,15 @@ void setup_pio_irq_logic()
   offset = pio_add_program(pio0, &read_program);
   conf = read_program_get_default_config(offset);
 
-  sm_config_set_out_pins(&conf, D0_PIN, 8);
+  sm_config_set_out_pins(&conf, D0_PIN, DATA_WIDTH);
   pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, DATA_WIDTH, false);
 #ifdef DIR_PIN
   pio_sm_set_consecutive_pindirs(pio0, SM_READ, DIR_PIN, 1, true);
   sm_config_set_sideset_pins(&conf, DIR_PIN);
+  sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
+#else
+  pio_sm_set_consecutive_pindirs(pio0, SM_READ, 31, 1, true);
+  sm_config_set_sideset_pins(&conf, 31);
   sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
 #endif // DIR_PIN
 

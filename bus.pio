@@ -25,7 +25,7 @@
 ; .define public CLK_PIN 25	// 6809 clock E signal
 ; .define public RW_PIN 24	// 6809 R/W signal
 ; .define public CTS_PIN 26	// Cartridge ROM select
-; .define public NMI_PIN 27	// 6809 NMI signal
+; .define public SCS_PIN 27	// Cartridge IO select
 
 
 .define public PIN_COUNT 32
