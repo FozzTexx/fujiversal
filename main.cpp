@@ -117,6 +117,7 @@ void setup_pio_irq_logic()
   pio_gpio_init(pio0, DIR_PIN);
 #endif // DIR_PIN
 
+#if INVERT_PINS
   // Invert /SCS and /CTS pins to make it easer to use JMP in PIO
   gpio_set_inover(CTS_PIN, GPIO_OVERRIDE_INVERT);
 #ifdef SCS_PIN
@@ -126,6 +127,7 @@ void setup_pio_irq_logic()
   gpio_set_inover(A14_PIN, GPIO_OVERRIDE_INVERT);
   gpio_set_inover(A15_PIN, GPIO_OVERRIDE_INVERT);
 #endif // SCS_PIN
+#endif // INVERT_PINS
 
   // Setup state machine that checks when we are selected
   offset = pio_add_program(pio0, &wait_sel_program);
