@@ -16,6 +16,7 @@
 ; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; ; Becker cart pinmap
 
+; .define public BECKER_REV0 1
 ; .define public D0_PIN 0
 ; .define public A0_PIN 8
 ; .define public A14_PIN A0_PIN + 14

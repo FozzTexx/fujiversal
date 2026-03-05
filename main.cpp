@@ -14,8 +14,6 @@
 
 #include <string>
 
-#define BECKER_REV0 0
-
 #define HEARTBEAT 1
 
 #define IO_BASE    0xFF41
@@ -116,18 +114,6 @@ void setup_pio_irq_logic()
 #ifdef DIR_PIN
   pio_gpio_init(pio0, DIR_PIN);
 #endif // DIR_PIN
-
-#if INVERT_PINS
-  // Invert /SCS and /CTS pins to make it easer to use JMP in PIO
-  gpio_set_inover(CTS_PIN, GPIO_OVERRIDE_INVERT);
-#ifdef SCS_PIN
-  gpio_set_inover(SCS_PIN, GPIO_OVERRIDE_INVERT);
-#else // ! SCS_PIN
-  // Invert A15 and A14 pins to make it easer to use JMP in PIO
-  gpio_set_inover(A14_PIN, GPIO_OVERRIDE_INVERT);
-  gpio_set_inover(A15_PIN, GPIO_OVERRIDE_INVERT);
-#endif // SCS_PIN
-#endif // INVERT_PINS
 
   // Setup state machine that checks when we are selected
   offset = pio_add_program(pio0, &wait_sel_program);
