@@ -54,5 +54,6 @@ check_fifo:
 	mov osr, ~null			; put a whole bunch of 1s in OSR
 	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
 	wait 0 gpio CLK_PIN [5]		; wait for end of cycle
+        mov osr, null                   ; load up 0s
 	out pindirs, DATA_WIDTH side 1	; change D0-D7 back to inputs
 .wrap
