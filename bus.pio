@@ -1,31 +1,31 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; PicoROM pinmap
-
-.define public D0_PIN 22
-.define public A0_PIN 0
-.define public A14_PIN A0_PIN + 14
-.define public A15_PIN A0_PIN + 15
-
-.define public CLK_PIN 16	// 6809 clock E signal
-.define public RW_PIN 17	// 6809 R/W signal
-.define public EXP_PIN 18	// PicoROM IO expander
-.define public DIR_PIN 19	// set direction of data pin buffer
-.define public CTS_PIN 20	// Cartridge ROM select
-.define public SCS_PIN 21	// Cartridge IO select
-
 ; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; ; Becker cart pinmap
+; ; PicoROM pinmap
 
-; .define public BECKER_REV0 1
-; .define public D0_PIN 0
-; .define public A0_PIN 8
+; .define public D0_PIN 22
+; .define public A0_PIN 0
 ; .define public A14_PIN A0_PIN + 14
 ; .define public A15_PIN A0_PIN + 15
 
-; .define public CLK_PIN 25	// 6809 clock E signal
-; .define public RW_PIN 24	// 6809 R/W signal
-; .define public CTS_PIN 26	// Cartridge ROM select
-; .define public SCS_PIN 27	// Cartridge IO select
+; .define public CLK_PIN 16	// 6809 clock E signal
+; .define public RW_PIN 17	// 6809 R/W signal
+; .define public EXP_PIN 18	// PicoROM IO expander
+; .define public DIR_PIN 19	// set direction of data pin buffer
+; .define public CTS_PIN 20	// Cartridge ROM select
+; .define public SCS_PIN 21	// Cartridge IO select
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Becker cart pinmap
+
+.define public BECKER_REV0 1
+.define public D0_PIN 0
+.define public A0_PIN 8
+.define public A14_PIN A0_PIN + 14
+.define public A15_PIN A0_PIN + 15
+
+.define public CLK_PIN 25	// 6809 clock E signal
+.define public RW_PIN 24	// 6809 R/W signal
+.define public CTS_PIN 26	// Cartridge ROM select
+.define public SCS_PIN 27	// Cartridge IO select
 
 
 .define public PIN_COUNT 32
@@ -36,12 +36,8 @@
 
 .program wait_sel
 idle:
-	;; wait 1 gpio A15_PIN [5]	; wait for CE, allow cycle to settle
-	;wait 1 gpio CLK_PIN	; wait for CLK
+	mov osr, ~pins		; read in all pins inverted
 
-	mov y, ~pins		; read in all pins inverted
-
-	mov osr, y		; copy to osr to do logical shift
 	out null, CTS_PIN	; dump lower bits
 	out x, 2		; grab the two /CTS /SCS bits we want
 	jmp !x idle		; if X is zero then /CTS and /SCS are high
@@ -49,13 +45,16 @@ idle:
 	;; out x, 2		; grab the A15 and A14 bits we want
 	;; jmp x-- idle		; if X is not zero then A15 or A14 are low
 
+	jmp pin send		; If R/W is high no need to wait
+	wait 1 gpio CLK_PIN	; wait for CLK
+
+send:
 	mov y, pins		; re-read all pins normal
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
 	//irq IRQ_SEL		; signal we are active
 
 .wrap_target
-	mov y, ~pins		; read in all pins
-	mov osr, y		; copy to osr to do logical shift
+	mov osr, ~pins		; read in all pins
 	out null, CTS_PIN	; dump lower bits
 	out y, 2		; grab the two /CTS /SCS bits we want
 	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
@@ -71,7 +70,7 @@ check_fifo:
 	out pins, DATA_WIDTH		; write byte to GPIO D0-D7
 	mov osr, ~null			; put a whole bunch of 1s in OSR
 	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
-	wait 0 gpio CLK_PIN [5]		; wait for end of cycle
+	wait 0 gpio CLK_PIN		; wait for end of cycle
         mov osr, null                   ; load up 0s
 	out pindirs, DATA_WIDTH side 1	; change D0-D7 back to inputs
 .wrap

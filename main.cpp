@@ -137,6 +137,8 @@ void setup_pio_irq_logic()
 #endif // BECKER_REV0
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
 
+  sm_config_set_jmp_pin(&conf, RW_PIN);
+
   pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
   pio_sm_set_enabled(pio0, SM_WAITSEL, true);
 
@@ -162,8 +164,6 @@ void setup_pio_irq_logic()
   sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
 #endif // DIR_PIN
 
-  sm_config_set_jmp_pin(&conf, A15_PIN);
-
   pio_sm_init(pio0, SM_READ, offset, &conf);
   pio_sm_set_enabled(pio0, SM_READ, true);
 
@@ -184,32 +184,24 @@ void __time_critical_func(romulan)(void)
       tight_loop_contents();
 
     bus.combined = pio0->rxf[SM_WAITSEL];
-#if 0
-    if (addr == last_addr)
-      continue;
-#endif
-
-#if 0
-    bool for_us = bus.cts;
-    for_us |= IO_BASE <= bus.addr && bus.addr < IO_TOP;
-    if (!for_us)
-      continue;
-#endif
 
 #if 0
     printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d COMBINED:0x%08x\r\n",
            bus.addr, bus.data, bus.cts, bus.scs, bus.rw, bus.combined);
 #endif
 
+#if 0
     if (!ramrom_ptr && rom_ptr != ROM)
       rom_ptr == ROM;
 
-    if (ramrom_needs_activate) {// && addr == RAMROM_ACTIVATE_ADDR) {
-      printf("Activating RAM\n"); // FIXME - why is this print necessary?
+    if (ramrom_needs_activate) {
+      //printf("Activating RAM\n"); // FIXME - why is this print necessary?
+      __dsb(); // Now printf isn't necessary!
       if (ramrom_ptr)
         rom_ptr = ramrom_ptr;
       ramrom_needs_activate = false;
     }
+#endif
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
     if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
