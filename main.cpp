@@ -14,7 +14,7 @@
 
 #include <string>
 
-#define HEARTBEAT 1
+#define HEARTBEAT 0
 
 #define IO_BASE    0xFF41
 #define IO_GETC    1
@@ -92,6 +92,14 @@ int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
 
+#define FIFO_SIZE 512
+uint32_t fifo_buffer[FIFO_SIZE];
+volatile uint32_t fifo_in = 0, fifo_out = 0;
+#define fifo_append(x) ({                       \
+      fifo_buffer[fifo_in] = x;                 \
+      fifo_in = (fifo_in + 1) % FIFO_SIZE;      \
+    })
+
 #if USE_IRQ
 bool selected = 0;
 
@@ -167,6 +175,18 @@ void setup_pio_irq_logic()
   pio_sm_init(pio0, SM_READ, offset, &conf);
   pio_sm_set_enabled(pio0, SM_READ, true);
 
+#ifdef DEBUG_PIN
+  gpio_init(DEBUG_PIN);
+  gpio_set_dir(DEBUG_PIN, GPIO_OUT);
+  gpio_put(DEBUG_PIN, 0);
+#endif // DEBUG_PIN
+
+#ifdef DEBUG2_PIN
+  gpio_init(DEBUG2_PIN);
+  gpio_set_dir(DEBUG2_PIN, GPIO_OUT);
+  gpio_put(DEBUG2_PIN, 0);
+#endif // DEBUG2_PIN
+
   return;
 }
 
@@ -176,14 +196,19 @@ void __time_critical_func(romulan)(void)
   uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(ROM));
   uint8_t *rom_ptr = ROM;
   uint32_t last_addr = -1;
+  bool debug = 0;
 
   setup_pio_irq_logic();
 
   while (true) {
+#if 0
     while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
       tight_loop_contents();
 
     bus.combined = pio0->rxf[SM_WAITSEL];
+#else
+    bus.combined = pio_sm_get_blocking(pio0, SM_WAITSEL);
+#endif
 
 #if 0
     printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d COMBINED:0x%08x\r\n",
@@ -205,6 +230,9 @@ void __time_critical_func(romulan)(void)
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
     if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
+#ifdef DEBUG2_PIN
+      gpio_put(DEBUG2_PIN, 1);
+#endif // DEBUG2_PIN
       unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
 #ifdef RW_PIN
       if (!bus.rw)
@@ -219,11 +247,22 @@ void __time_critical_func(romulan)(void)
         pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? IO_FLAG_AVAIL : 0x00;
         break;
       case IO_PUTC: // Write byte
+#ifdef FIFO_SIZE
+        fifo_append(bus.combined);
+#else // ! FIFO_SIZE
         sio_hw->fifo_wr = bus.combined;
+#endif // FIFO_SIZE
+#ifdef DEBUG_PIN
+        debug = !debug;
+        gpio_put(DEBUG_PIN, debug);
+#endif // DEBUG_PIN
         break;
       case IO_CONTROL: // Write control reg
         break;
       }
+#ifdef DEBUG2_PIN
+      gpio_put(DEBUG2_PIN, 0);
+#endif // DEBUG2_PIN
 #if 0
       printf("ADDR:%04x DATA:%02x REG:%d A16-17:%d\r\n", bus.addr, bus.data, io_reg,
              (bus.combined >> ADDR_WIDTH) & 0x3);
@@ -351,14 +390,27 @@ int main()
     if (now - last_hb >= 1000) printf("(1)");
 #endif // HEARTBEAT
 
-    if (multicore_fifo_rvalid()) {
-      bus.combined = multicore_fifo_pop_blocking();
+#ifdef FIFO_SIZE
+    //__dsb();
+    if (fifo_in != fifo_out) {
+      bus.combined = fifo_buffer[fifo_out];
+      fifo_out = (fifo_out + 1) % FIFO_SIZE;
 #if 0
-      printf("Received $%04x:$%02x\r\n", addr, data);
+      printf("Received $%04x:$%02x %d %d\r\n", bus.addr, bus.data, fifo_in, fifo_out);
 #else
       putchar(bus.data);
 #endif
     }
+#else // ! FIFO_SIZE
+    if (multicore_fifo_rvalid()) {
+      bus.combined = multicore_fifo_pop_blocking();
+#if 0
+      printf("Received $%04x:$%02x\r\n", bus.addr, bus.data);
+#else
+      putchar(bus.data);
+#endif
+    }
+#endif // FIFO_SIZE
 
 #if HEARTBEAT
     if (now - last_hb >= 1000) printf("(2)");

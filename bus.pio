@@ -26,7 +26,8 @@
 .define public RW_PIN 24	// 6809 R/W signal
 .define public CTS_PIN 26	// Cartridge ROM select
 .define public SCS_PIN 27	// Cartridge IO select
-
+.define public DEBUG_PIN 28	// for debugging
+;.define public DEBUG2_PIN 29	// for debugging
 
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
