@@ -11,6 +11,7 @@
 #include <hardware/pio.h>
 #include <hardware/irq.h>
 #include <hardware/watchdog.h>
+#include <hardware/clocks.h>
 
 #include <string>
 
@@ -92,7 +93,7 @@ int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
 
-#define FIFO_SIZE 512
+#define FIFO_SIZE 256
 uint32_t fifo_buffer[FIFO_SIZE];
 volatile uint32_t fifo_in = 0, fifo_out = 0;
 #define fifo_append(x) ({                       \
@@ -199,6 +200,8 @@ void __time_critical_func(romulan)(void)
   bool debug = 0;
 
   setup_pio_irq_logic();
+
+  __asm volatile ("cpsid i"); // Disable all interrupts on the executing core
 
   while (true) {
 #if 0
@@ -369,6 +372,8 @@ int main()
   bool our_command = false;
   ByteBuffer command_buf;
 
+
+  set_sys_clock_khz(250000, true);
 
   multicore_launch_core1(romulan);
   stdio_init_all();

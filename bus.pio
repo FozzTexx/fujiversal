@@ -27,7 +27,7 @@
 .define public CTS_PIN 26	// Cartridge ROM select
 .define public SCS_PIN 27	// Cartridge IO select
 .define public DEBUG_PIN 28	// for debugging
-;.define public DEBUG2_PIN 29	// for debugging
+.define public DEBUG2_PIN 29	// for debugging
 
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
@@ -71,6 +71,7 @@ check_fifo:
 	out pins, DATA_WIDTH		; write byte to GPIO D0-D7
 	mov osr, ~null			; put a whole bunch of 1s in OSR
 	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
+	wait 1 gpio CLK_PIN		; wait for start of cycle
 	wait 0 gpio CLK_PIN		; wait for end of cycle
         mov osr, null                   ; load up 0s
 	out pindirs, DATA_WIDTH side 1	; change D0-D7 back to inputs
