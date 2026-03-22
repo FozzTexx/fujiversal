@@ -93,6 +93,7 @@ int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
 
+#if 0
 #define FIFO_SIZE 256
 uint32_t fifo_buffer[FIFO_SIZE];
 volatile uint32_t fifo_in = 0, fifo_out = 0;
@@ -100,6 +101,7 @@ volatile uint32_t fifo_in = 0, fifo_out = 0;
       fifo_buffer[fifo_in] = x;                 \
       fifo_in = (fifo_in + 1) % FIFO_SIZE;      \
     })
+#endif
 
 #if USE_IRQ
 bool selected = 0;
