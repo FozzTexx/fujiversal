@@ -47,18 +47,25 @@ idle:
 	;; jmp x-- idle		; if X is not zero then A15 or A14 are low
 
 	jmp pin send		; If R/W is high no need to wait
-	wait 1 gpio CLK_PIN	; wait for CLK
+	wait 1 gpio CLK_PIN	; wait for CLK (write cycle)
 
 send:
 	mov y, pins		; re-read all pins normal
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
-	//irq IRQ_SEL		; signal we are active
+
+	wait 0 gpio CLK_PIN	; wait for end of this bus cycle
 
 .wrap_target
-	mov osr, ~pins		; read in all pins
+	; Check if CTS/SCS still asserted into next cycle
+	wait 1 gpio CLK_PIN	; wait for start of next cycle
+	mov osr, ~pins		; read pins inverted
 	out null, CTS_PIN	; dump lower bits
-	out y, 2		; grab the two /CTS /SCS bits we want
-	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
+	out x, 2		; get /CTS /SCS bits
+	jmp !x idle		; if deasserted, go to idle
+	; CTS still asserted - new address on bus, push it
+	mov y, pins		; read current pins
+	in y, PIN_COUNT		; push new bus state
+	wait 0 gpio CLK_PIN	; wait for end of this cycle
 .wrap
 
 .program read
