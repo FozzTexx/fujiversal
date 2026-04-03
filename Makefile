@@ -26,3 +26,6 @@ rom.h: $(ROM_IMAGE)
 
 $(ROM_IMAGE): $(ROM_CFILES) $(ROM_AFILES)
 	defoogi make -C $(MSX_DIR)
+
+clean:
+	rm -rf build/ make/ rom.h
