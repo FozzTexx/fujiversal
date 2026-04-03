@@ -52,13 +52,21 @@ idle:
 send:
 	mov y, pins		; re-read all pins normal
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
-	//irq IRQ_SEL		; signal we are active
+
+	wait 0 gpio CLK_PIN	; wait for end of this bus cycle
 
 .wrap_target
+	; Check if CTS/SCS still asserted into next cycle
+	wait 1 gpio CLK_PIN	; wait for start of next cycle
 	mov osr, ~pins		; read in all pins
 	out null, CTS_PIN	; dump lower bits
 	out y, 2		; grab the two /CTS /SCS bits we want
 	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
+;	jmp !y idle		; if deasserted, go to idle
+	; CTS still asserted - new address on bus, push it
+	;mov y, pins		; read current pins
+	;in y, PIN_COUNT		; push new bus state
+	wait 0 gpio CLK_PIN	; wait for end of this cycle
 .wrap
 
 .program read
@@ -73,6 +81,6 @@ check_fifo:
 	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
 	wait 1 gpio CLK_PIN		; wait for start of cycle
 	wait 0 gpio CLK_PIN		; wait for end of cycle
-        mov osr, null                   ; load up 0s
+	mov osr, null			; load up 0s
 	out pindirs, DATA_WIDTH side 1	; change D0-D7 back to inputs
 .wrap
