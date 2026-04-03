@@ -62,10 +62,6 @@ send:
 	out null, CTS_PIN	; dump lower bits
 	out y, 2		; grab the two /CTS /SCS bits we want
 	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
-;	jmp !y idle		; if deasserted, go to idle
-	; CTS still asserted - new address on bus, push it
-	;mov y, pins		; read current pins
-	;in y, PIN_COUNT		; push new bus state
 	wait 0 gpio CLK_PIN	; wait for end of this cycle
 .wrap
 
