@@ -6,8 +6,10 @@ AR_DEFAULT ?= $(AS_DEFAULT)
 include $(MWD)/tc-common.mk
 
 CFLAGS +=
-AFLAGS +=
+ASFLAGS +=
 LDFLAGS +=
+
+CFLAGS += -DGIT_VERSION='\"$(GIT_VERSION)\"'
 
 define include-dir-flag
   -I$1
@@ -34,9 +36,9 @@ define link-bin
 endef
 
 define compile
-  $(CC) -c $(CFLAGS) -o $1 $2
+  $(CC) -c $(CFLAGS) -o $1 $2 -MT $(1:.o=.d) -MMD
 endef
 
 define assemble
-  $(AS) $(AFLAGS) -o=$1 $2
+  $(AS) $(ASFLAGS) -o=$1 $2
 endef

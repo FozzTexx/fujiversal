@@ -1,11 +1,18 @@
 CC_DEFAULT ?= wcc
 AS_DEFAULT ?= wasm
 LD_DEFAULT ?= wlink OPTION quiet
+AR_DEFAULT ?= wlib
 
 include $(MWD)/tc-common.mk
-CFLAGS += -0 -bt=dos -ms -s -osh -zu
-AFLAGS +=
-LDFLAGS += SYSTEM dos OPTION MAP LIBPATH $(FUJINET_LIB_DIR)
+
+CFLAGS += -0 -bt=dos -fr=$(basename $@).err
+ASFLAGS +=
+LDFLAGS += SYSTEM dos
+ifneq ($(FUJINET_LIB),__UNDEFINED__)
+  LDFLAGS += LIBPATH $(FUJINET_LIB_DIR)
+endif
+
+CFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
 
 define include-dir-flag
   -I$1
@@ -23,7 +30,7 @@ define library-flag
 endef
 
 define link-lib
-  $(LIB) -n $1 $2
+  $(AR) -n $1 $2
 endef
 
 define link-bin
@@ -31,13 +38,13 @@ define link-bin
     disable 1014 \
     name $1 \
     file {$2} \
-    library {$(LIBS)}
+$(if $(filter __UNDEFINED__,$(FUJINET_LIB)),,$(space) library {$(LIBS)} )
 endef
 
 define compile
-  $(CC) $(CFLAGS) -ad=$(OBJ_DIR)/$(basename $(notdir $2)).d -fo=$1 $2
+  $(CC) $(CFLAGS) -ad=$(1:.o=.d) -fo=$1 $2
 endef
 
 define assemble
-  $(AS) -c $(AFLAGS) -o $1 $2 2>&1
+  $(AS) -c $(ASFLAGS) -fo=$1 $2 2>&1
 endef
