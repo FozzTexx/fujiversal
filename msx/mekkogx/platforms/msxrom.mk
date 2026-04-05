@@ -5,7 +5,7 @@ MWD := $(realpath $(dir $(lastword $(MAKEFILE_LIST)))..)
 include $(MWD)/common.mk
 include $(MWD)/toolchains/z88dk.mk
 
-MSXROM_FLAGS = +msx -subtype=rom
+MSXROM_FLAGS ?= +msx -subtype=rom
 CFLAGS += $(MSXROM_FLAGS)
 LDFLAGS += $(MSXROM_FLAGS)
 ifneq ($(IS_LIBRARY),1)

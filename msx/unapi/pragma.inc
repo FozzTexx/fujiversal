@@ -1,0 +1,3 @@
+-pragma-define:CRT_ORG_CODE=0x4000
+-pragma-output:CLIB_OPT_HEAP=0
+-pragma-output:CLIB_OPT_STDIO=0
