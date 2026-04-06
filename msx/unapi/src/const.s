@@ -7,18 +7,17 @@
   ;--- Specification identifier (up to 15 chars)
 
 UNAPI_ID:
-  db  "SIMPLE_MATH",0
+  db  "FUJINET",0
 
   ;--- Implementation identifier (up to 63 chars and zero terminated)
 
 APIINFO:
-  db  "Konamiman's ROM implementation of SIMPLE_MATH UNAPI",0
+  db  "ROM implementation of FUJINET UNAPI",0
 
   ;--- Other data
 
 INITMSG:
-  db  13,10,"UNAPI Sample ROM 1.0 (SIMPLE_MATH)",13,10
-  db  "(c) 2019 by Konamiman",13,10
+  db  13,10,"UNAPI Sample ROM 1.0 (FUJINET)",13,10
   db  13,10
   db  0
 
