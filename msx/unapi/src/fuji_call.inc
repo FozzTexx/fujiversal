@@ -1,0 +1,1 @@
+	EXTERN	_fujiF5_none, _fujiF5_write, _fujiF5_read
