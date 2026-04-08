@@ -4,3 +4,4 @@ r2r/
 *-picorom
 __pycache__
 rom.h
+*.zip
