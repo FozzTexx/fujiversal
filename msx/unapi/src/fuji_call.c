@@ -139,24 +139,8 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
   fb_packet.header.checksum = 0;
   fb_packet.header.fields = params->aux_descr;
 
-  idx = 0;
-  numbytes = fuji_field_numbytes(params->aux_descr);
-  if (numbytes) {
-    fb_packet.data[idx++] = params->aux1;
-    numbytes--;
-  }
-  if (numbytes) {
-    fb_packet.data[idx++] = params->aux2;
-    numbytes--;
-  }
-  if (numbytes) {
-    fb_packet.data[idx++] = params->aux3;
-    numbytes--;
-  }
-  if (numbytes) {
-    fb_packet.data[idx++] = params->aux4;
-    numbytes--;
-  }
+  for (idx = 0, numbytes = fuji_field_numbytes(params->aux_descr); numbytes; numbytes--, idx++)
+    fb_packet.data[idx] = params->aux[idx];
 
   // Data is spread across two buffers: ours and data
   ck1 = fuji_calc_checksum(&fb_packet, sizeof(fb_packet.header) + idx, 0);
