@@ -1,5 +1,6 @@
 #include <stdint.h>
 
+#if 0
 // returns signed int with data or -1 if no data is available
 extern int __FASTCALL__ port_getc();
 
@@ -20,10 +21,14 @@ extern uint16_t __CALLEE__ port_getbuf(void *buf, uint16_t len, uint16_t timeout
 extern uint16_t __CALLEE__ port_get_until(void *buf, uint16_t maxlen, uint8_t c,
                                           uint16_t timeout);
 
-// writes character to port
-extern void __FASTCALL__ port_putc(uint8_t c);
-
 // writes data to port, returns number of bytes written
 extern uint16_t __CALLEE__ port_putbuf(void *buf, uint16_t len);
+#endif
+
+extern uint16_t __CALLEE__ port_getbuf_slip_dual(void *hdr_buf, uint16_t hdr_len,
+                                                 void *data_buf, uint16_t data_len,
+                                                 uint16_t timeout);
+extern void __FASTCALL__ port_putc(uint8_t c);
+extern uint16_t __CALLEE__ port_putbuf_slip(const void *buf, uint16_t len);
 
 #define VDP_IS_PAL (((unsigned char *) 0x002b) & 0x80)
