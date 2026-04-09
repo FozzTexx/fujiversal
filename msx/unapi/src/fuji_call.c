@@ -116,42 +116,26 @@ static uint16_t fuji_calc_checksum(const void *ptr, uint16_t len, uint16_t seed)
   return chk;
 }
 
-static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
+static uint8_t fuji_packet_call(AtariSIODirection direction, fujibus_packet *packet_ptr,
+                                void *pbuf, uint16_t plen)
 {
-  int code;
-  uint8_t ck1, ck2, pdev;
-  uint16_t rlen, plen;
-  uint16_t idx, numbytes;
   uint8_t saved_slot, my_slot;
-  uint8_t *pbuf;
-  fujibus_packet fb_packet;
+  uint8_t ck1, ck2;
+  uint16_t rlen;
   bool success = false;
+  uint8_t pdev = packet_ptr->header.device;
+  uint8_t aux_len = fuji_field_numbytes(packet_ptr->header.fields);
 
 
-  printf("UNAPI FUJINET BUS CALL 0x%02x PARAMS 0x%04x\n", direction, (uint16_t) params);
+  packet_ptr->header.length = sizeof(packet_ptr->header) + aux_len;
+  if (direction == SIO_DIRECTION_WRITE)
+    packet_ptr->header.length += plen;
 
-  pbuf = params->buffer;
-  plen = params->length;
-
-  fb_packet.header.device = pdev = params->device;
-  fb_packet.header.command = params->command;
-  fb_packet.header.length = sizeof(fujibus_header);
-  fb_packet.header.checksum = 0;
-  fb_packet.header.fields = params->aux_descr;
-
-  for (idx = 0, numbytes = fuji_field_numbytes(params->aux_descr); numbytes; numbytes--, idx++)
-    fb_packet.data[idx] = params->aux[idx];
-
-  // Data is spread across two buffers: ours and data
-  ck1 = fuji_calc_checksum(&fb_packet, sizeof(fb_packet.header) + idx, 0);
+  // Data is spread across two buffers: packet_ptr and pbuf
+  ck1 = fuji_calc_checksum(packet_ptr, aux_len + sizeof(packet_ptr->header), 0);
   if (direction == SIO_DIRECTION_WRITE)
     ck1 = fuji_calc_checksum(pbuf, plen, ck1);
-  fb_packet.header.checksum = ck1;
-
-  fb_packet.header.length += idx;
-#ifdef DEBUG
-  printf("Packet len %d\n", fb_packet.header.length);
-#endif /* DEBUG */
+  packet_ptr->header.checksum = ck1;
 
   // Page in memory mapped IO
   my_slot = msx_get_page_slot(1);
@@ -159,7 +143,7 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
   msx_set_page_slot(2, my_slot);
 
   port_putc(SLIP_END);
-  port_putbuf_slip(&fb_packet, idx + sizeof(fb_packet.header));
+  port_putbuf_slip(packet_ptr, aux_len + sizeof(packet_ptr->header));
   if (direction == SIO_DIRECTION_WRITE)
     port_putbuf_slip(pbuf, plen);
   port_putc(SLIP_END);
@@ -168,10 +152,11 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
     pbuf = NULL;
     plen = 0;
   }
-  rlen = port_getbuf_slip_dual(&fb_packet, sizeof(fb_packet.header), pbuf, plen, TIMEOUT_SLOW);
-  if (rlen < sizeof(fujibus_header) || rlen != fb_packet.header.length) {
+  rlen = port_getbuf_slip_dual(packet_ptr, sizeof(packet_ptr->header),
+                               pbuf, plen, TIMEOUT_SLOW);
+  if (rlen < sizeof(fujibus_header) || rlen != packet_ptr->header.length) {
 #ifdef DEBUG
-    printf("Reply length incorrect: %d %d\n", rlen, fb_packet.header.length);
+    printf("Reply length incorrect: %d %d\n", rlen, packet_ptr->header.length);
     hexdump((uint8_t *) &fb_packet, sizeof(fujibus_header));
 #endif /* DEBUG */
     success = false;
@@ -185,13 +170,13 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
 #endif /* DEBUG */
 
   // Need to zero out checksum in order to calculate
-  ck1 = fb_packet.header.checksum;
-  fb_packet.header.checksum = 0;
+  ck1 = packet_ptr->header.checksum;
+  packet_ptr->header.checksum = 0;
 
-  // Data is spread across two buffers: ours and reply
-  ck2 = fuji_calc_checksum(&fb_packet, sizeof(fb_packet.header), 0);
+  // Data is spread across two buffers: packet_ptr and pbuf
+  ck2 = fuji_calc_checksum(packet_ptr, sizeof(packet_ptr->header), 0);
   if (direction == SIO_DIRECTION_READ)
-    ck2 = fuji_calc_checksum(pbuf, rlen - sizeof(fb_packet.header), ck2);
+    ck2 = fuji_calc_checksum(pbuf, rlen - sizeof(packet_ptr->header), ck2);
   ck2 = (uint8_t) ck2;
 
   if (ck1 != ck2) {
@@ -202,7 +187,7 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
     goto done;
   }
 
-  if (fb_packet.header.device != pdev) {
+  if (packet_ptr->header.device != pdev) {
 #ifdef DEBUG
     printf("Incorrect device: R:0x%02x E:0x%02x\n", fb_packet.header.device, pdev);
     hexdump((uint8_t *) &fb_packet, sizeof(fb_packet.header));
@@ -211,7 +196,7 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
     goto done;
   }
 
-  if (fb_packet.header.command != PACKET_ACK) {
+  if (packet_ptr->header.command != PACKET_ACK) {
 #ifdef DEBUG
     printf("Not ACK: 0x%02x\n", fb_packet.header.command);
 #endif /* DEBUG */
@@ -229,13 +214,73 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
   return success;
 }
 
+static uint8_t fuji_unapi_call(AtariSIODirection direction, FujiNetParams *params)
+{
+  uint8_t ck1;
+  uint16_t idx, numbytes;
+  fujibus_packet fb_packet;
+
+
+  printf("UNAPI FUJINET BUS CALL 0x%02x PARAMS 0x%04x\n", direction, (uint16_t) params);
+
+  fb_packet.header.device = params->device;
+  fb_packet.header.command = params->command;
+  fb_packet.header.fields = params->aux_descr;
+
+  for (idx = 0, numbytes = fuji_field_numbytes(params->aux_descr); numbytes; numbytes--, idx++)
+    fb_packet.data[idx] = params->aux[idx];
+
+  return fuji_packet_call(direction, &fb_packet, params->buffer, params->length);
+}
+
 uint8_t __FASTCALL__ fujiF5_write(FujiNetParams *params)
 {
-  return fuji_bus_call(SIO_DIRECTION_WRITE, params);
+  return fuji_unapi_call(SIO_DIRECTION_WRITE, params);
 }
 
 uint8_t __FASTCALL__ fujiF5_read(FujiNetParams *params)
 {
-  return fuji_bus_call(SIO_DIRECTION_READ, params);
+  return fuji_unapi_call(SIO_DIRECTION_READ, params);
 }
 
+bool fuji_bus_call(uint8_t device, uint8_t fuji_cmd, uint8_t fields,
+		   uint8_t aux1, uint8_t aux2, uint8_t aux3, uint8_t aux4,
+		   const void *data, size_t data_length,
+		   void *reply, size_t reply_length)
+{
+  int code;
+  uint8_t ck1, ck2;
+  uint16_t rlen;
+  uint16_t idx, numbytes;
+  fujibus_packet fb_packet;
+
+
+  fb_packet.header.device = device;
+  fb_packet.header.command = fuji_cmd;
+  fb_packet.header.length = sizeof(fujibus_header);
+  fb_packet.header.checksum = 0;
+  fb_packet.header.fields = fields;
+
+  idx = 0;
+  numbytes = fuji_field_numbytes(fields);
+  if (numbytes) {
+    fb_packet.data[idx++] = aux1;
+    numbytes--;
+  }
+  if (numbytes) {
+    fb_packet.data[idx++] = aux2;
+    numbytes--;
+  }
+  if (numbytes) {
+    fb_packet.data[idx++] = aux3;
+    numbytes--;
+  }
+  if (numbytes) {
+    fb_packet.data[idx++] = aux4;
+    numbytes--;
+  }
+
+  if (reply)
+    return fuji_packet_call(SIO_DIRECTION_READ, &fb_packet, reply, reply_length);
+  return fuji_packet_call(SIO_DIRECTION_WRITE, &fb_packet, data, data_length);
+}
