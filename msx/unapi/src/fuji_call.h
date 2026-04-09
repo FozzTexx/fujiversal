@@ -9,6 +9,5 @@ typedef struct {
   uint16_t length;
 } FujiNetParams;
 
-extern uint8_t __FASTCALL__ fujiF5_none(FujiNetParams *params);
 extern uint8_t __FASTCALL__ fujiF5_write(FujiNetParams *params);
 extern uint8_t __FASTCALL__ fujiF5_read(FujiNetParams *params);

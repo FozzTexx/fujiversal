@@ -131,7 +131,7 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
   printf("UNAPI FUJINET BUS CALL 0x%02x PARAMS 0x%04x\n", direction, (uint16_t) params);
 
   pbuf = params->buffer;
-  plen = direction != SIO_DIRECTION_NONE ? params->length : 0;
+  plen = params->length;
 
   fb_packet.header.device = pdev = params->device;
   fb_packet.header.command = params->command;
@@ -144,10 +144,8 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
 
   // Data is spread across two buffers: ours and data
   ck1 = fuji_calc_checksum(&fb_packet, sizeof(fb_packet.header) + idx, 0);
-
   if (direction == SIO_DIRECTION_WRITE)
     ck1 = fuji_calc_checksum(pbuf, plen, ck1);
-
   fb_packet.header.checksum = ck1;
 
   fb_packet.header.length += idx;
@@ -229,11 +227,6 @@ static uint8_t fuji_bus_call(AtariSIODirection direction, FujiNetParams *params)
   // Restore whatever was in page 2
   msx_set_page_slot(2, saved_slot);
   return success;
-}
-
-uint8_t __FASTCALL__ fujiF5_none(FujiNetParams *params)
-{
-  return fuji_bus_call(SIO_DIRECTION_NONE, params);
 }
 
 uint8_t __FASTCALL__ fujiF5_write(FujiNetParams *params)

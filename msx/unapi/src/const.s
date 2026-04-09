@@ -26,7 +26,6 @@ INITMSG:
 
 FN_TABLE:
 	dw	FN_INFO
-	dw	_fujiF5_none
 	dw	_fujiF5_write
 	dw	_fujiF5_read
 MAX_FN:	equ	($ - FN_TABLE) / 2 - 1
