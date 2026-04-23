@@ -9,6 +9,7 @@
 typedef struct {
   uint base;
   uint count;
+  bool inverted;
 } pin_range_t;
 
 typedef struct {
@@ -22,8 +23,6 @@ typedef struct {
   uint input_count;
   const pin_range_t *output_pins;
   uint output_count;
-  const pin_range_t *invert_pins;
-  uint invert_count;
 
   int in_instr_base;   // -1 = skip
   int out_instr_base;  // -1 = skip, for sm_config_set_out_pins

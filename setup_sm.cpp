@@ -2,8 +2,8 @@
 
 //#define LED_PIN 39
 
-void get_min_max_gpio(uint *gpio_base, uint *gpio_top,
-                      const pin_range_t *ranges, uint range_count)
+void sm_get_min_max_gpio(uint *gpio_base, uint *gpio_top,
+                         const pin_range_t *ranges, uint range_count)
 {
   uint idx;
   uint base, top;
@@ -18,6 +18,22 @@ void get_min_max_gpio(uint *gpio_base, uint *gpio_top,
 
   *gpio_base = base;
   *gpio_top = top;
+  return;
+}
+
+void sm_gpio_init(PIO pio, uint sm, uint base, uint count, bool inverted, bool out)
+{
+  uint idx;
+
+
+  for (idx = 0; idx < count; idx++) {
+    pio_gpio_init(pio, base + idx);
+    gpio_disable_pulls(base + idx);
+    if (inverted)
+      gpio_set_inover(base + idx, GPIO_OVERRIDE_INVERT);
+  }
+  pio_sm_set_consecutive_pindirs(pio, sm, base, count, out);
+
   return;
 }
 
@@ -40,9 +56,8 @@ int setup_state_machine(pio_sm_t *pio_sm, const sm_setup_t *cfg)
   // Find the lowest and highest GPIO required
   gpio_base = 255;
   gpio_top = 0;
-  get_min_max_gpio(&gpio_base, &gpio_top, cfg->input_pins, cfg->input_count);
-  get_min_max_gpio(&gpio_base, &gpio_top, cfg->output_pins, cfg->output_count);
-  get_min_max_gpio(&gpio_base, &gpio_top, cfg->invert_pins, cfg->invert_count);
+  sm_get_min_max_gpio(&gpio_base, &gpio_top, cfg->input_pins, cfg->input_count);
+  sm_get_min_max_gpio(&gpio_base, &gpio_top, cfg->output_pins, cfg->output_count);
 
   if (gpio_top <= gpio_base)
     return 2;
@@ -79,29 +94,15 @@ int setup_state_machine(pio_sm_t *pio_sm, const sm_setup_t *cfg)
   conf = cfg->get_default_config(offset);
 
   for (idx = 0; idx < cfg->input_count; idx++) {
-    for (jdx = 0; jdx < cfg->input_pins[idx].count; jdx++) {
-      pio_gpio_init(pio_sm->pio, cfg->input_pins[idx].base + jdx);
-      gpio_disable_pulls(cfg->input_pins[idx].base + jdx);
-    }
-    pio_sm_set_consecutive_pindirs(pio_sm->pio, pio_sm->sm, cfg->input_pins[idx].base,
-                                   cfg->input_pins[idx].count, false);
+    sm_gpio_init(pio_sm->pio, pio_sm->sm, cfg->input_pins[idx].base,
+                 cfg->input_pins[idx].count, cfg->input_pins[idx].inverted,
+                 GPIO_IN);
   }
 
   for (idx = 0; idx < cfg->output_count; idx++) {
-    for (jdx = 0; jdx < cfg->output_pins[idx].count; jdx++) {
-      pio_gpio_init(pio_sm->pio, cfg->output_pins[idx].base + jdx);
-      gpio_disable_pulls(cfg->output_pins[idx].base + jdx);
-    }
-    pio_sm_set_consecutive_pindirs(pio_sm->pio, pio_sm->sm, cfg->output_pins[idx].base,
-                                   cfg->output_pins[idx].count, true);
-  }
-
-  for (idx = 0; idx < cfg->invert_count; idx++) {
-    for (jdx = 0; jdx < cfg->invert_pins[idx].count; jdx++) {
-      pio_gpio_init(pio_sm->pio, cfg->invert_pins[idx].base + jdx);
-      gpio_disable_pulls(cfg->invert_pins[idx].base + jdx);
-      gpio_set_inover(cfg->invert_pins[idx].base + jdx, GPIO_OVERRIDE_INVERT);
-    }
+    sm_gpio_init(pio_sm->pio, pio_sm->sm, cfg->output_pins[idx].base,
+                 cfg->output_pins[idx].count, cfg->output_pins[idx].inverted,
+                 GPIO_OUT);
   }
 
   if (cfg->out_instr_base >= 0)

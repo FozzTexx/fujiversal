@@ -3,7 +3,7 @@
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
-//#include "setup_sm.h"
+#include "setup_sm.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -157,6 +157,7 @@ void setup_pio_irq_logic()
       .input_count        = ARRAY_SIZE(waitsel_input_pins),
       .in_instr_base      = 0,
       .out_instr_base     = -1,
+      .push_threshold     = 32,
       .sideset_base       = -1,
       .jmp_pin            = RW_PIN,
     };
