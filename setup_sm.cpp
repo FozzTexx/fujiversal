@@ -39,7 +39,7 @@ void sm_gpio_init(PIO pio, uint sm, uint base, uint count, bool inverted, bool o
 
 int setup_state_machine(pio_sm_t *pio_sm, const sm_setup_t *cfg)
 {
-  uint idx, jdx;
+  uint idx;
   uint gpio_base, gpio_top;
   uint offset;
   pio_sm_config conf;
@@ -110,7 +110,7 @@ int setup_state_machine(pio_sm_t *pio_sm, const sm_setup_t *cfg)
 
   if (cfg->sideset_base >= 0) {
     sm_config_set_sideset_pins(&conf, cfg->sideset_base);
-    sm_config_set_sideset(&conf, cfg->sideset_count, cfg->sideset_opt, false);
+    sm_config_set_sideset(&conf, cfg->sideset_count + 1, cfg->sideset_opt, false);
   }
 
   if (cfg->jmp_pin >= 0)
