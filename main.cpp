@@ -99,6 +99,12 @@ void setup_pio_irq_logic()
   uint offset;
 
 
+#ifdef RESET_PIN
+  gpio_init(RESET_PIN);
+  gpio_set_dir(RESET_PIN, GPIO_IN);
+  gpio_disable_pulls(RESET_PIN);
+#endif // RESET_PIN
+
   // Setup state machine that checks when we are selected
   {
     pin_range_t waitsel_input_pins[] = {
@@ -107,17 +113,11 @@ void setup_pio_irq_logic()
       { CTS_PIN, 2         },
     };
 
-    pin_range_t waitsel_output_pins[] = {
-      { DIR_PIN, 1         },
-    };
-
     sm_setup_t waitsel_setup = {
       .program            = &wait_sel_program,
       .get_default_config = wait_sel_program_get_default_config,
       .input_pins         = waitsel_input_pins,
       .input_count        = ARRAY_SIZE(waitsel_input_pins),
-      .output_pins        = waitsel_output_pins,
-      .output_count       = ARRAY_SIZE(waitsel_output_pins),
       .in_instr_base      = 0,
       .out_instr_base     = -1,
       .push_threshold     = 32,
@@ -140,21 +140,29 @@ void setup_pio_irq_logic()
     pin_range_t read_input_pins[] = {
       { D0_PIN, DATA_WIDTH },
     };
+#ifdef DIR_PIN
     pin_range_t read_output_pins[] = {
       { DIR_PIN, 1         },
     };
+#endif
 
     sm_setup_t read_setup = {
       .program            = &read_program,
       .get_default_config = read_program_get_default_config,
       .input_pins         = read_input_pins,
       .input_count        = ARRAY_SIZE(read_input_pins),
+#ifdef DIR_PIN
       .output_pins        = read_output_pins,
       .output_count       = ARRAY_SIZE(read_output_pins),
+#endif
       .in_instr_base      = -1,
       .out_instr_base     = D0_PIN,
       .out_count          = DATA_WIDTH,
+#ifdef DIR_PIN
       .sideset_base       = DIR_PIN,
+#else
+      .sideset_base       = 31,
+#endif
       .sideset_count      = 1,
       .sideset_opt        = true,
       .jmp_pin            = -1,

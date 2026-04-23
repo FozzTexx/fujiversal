@@ -1,8 +1,8 @@
 #BOARD ?= msx_proto_260402
 #ROM_IMAGE = $(MSX_DIR)/r2r/msxrom/disk.rom
 
-BOARD ?= picorom_coco
-#BOARD ?= coco_proto_260402
+#BOARD ?= picorom_coco
+BOARD ?= coco_proto_260402
 ROM_IMAGE = hdbdw3bc3.rom
 
 BUILD_DIR = build/$(BOARD)
