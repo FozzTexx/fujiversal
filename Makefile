@@ -13,7 +13,7 @@ ROM_H = $(BUILD_DIR)/rom.h
 # ROM_AFILES = $(addprefix $(MSX_DIR)/,header.s jptable.s io.s)
 
 SRC = main.cpp FujiBusPacket.cpp FujiBusPacket.h bus.pio $(ROM_H)	\
-      fujiDeviceID.h fujiCommandID.h
+      fujiDeviceID.h fujiCommandID.h setup_sm.cpp setup_sm.h
 
 $(BUILD_DIR)/$(FIRMWARE): $(SRC) $(BUILD_MAKE)
 	defoogi make -C $(BUILD_DIR)

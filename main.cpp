@@ -3,6 +3,7 @@
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
+//#include "setup_sm.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -39,7 +40,9 @@
 
 #define USE_IRQ 0
 
+#ifndef SETUP_SM_H
 #define SM_WAITSEL 0
+#endif
 #define SM_READ    1
 
 #define RING_SIZE 1024
@@ -93,6 +96,11 @@ int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
 
+#ifdef SETUP_SM_H
+#define PSM_WAITSEL 0
+pio_sm_t state_machine[3];
+#endif // SETUP_SM_H
+
 #if 0
 #define FIFO_SIZE 256
 uint32_t fifo_buffer[FIFO_SIZE];
@@ -134,24 +142,46 @@ void setup_pio_irq_logic()
 #endif // DIR_PIN
 
   // Setup state machine that checks when we are selected
+#ifdef SETUP_SM_H
+  {
+    pin_range_t waitsel_input_pins[] = {
+      { A0_PIN, ADDR_WIDTH },
+      { D0_PIN, DATA_WIDTH },
+      { CTS_PIN, 2         },
+    };
+
+    sm_setup_t waitsel_setup = {
+      .program            = &wait_sel_program,
+      .get_default_config = wait_sel_program_get_default_config,
+      .input_pins         = waitsel_input_pins,
+      .input_count        = ARRAY_SIZE(waitsel_input_pins),
+      .in_instr_base      = 0,
+      .out_instr_base     = -1,
+      .sideset_base       = -1,
+      .jmp_pin            = RW_PIN,
+    };
+
+    setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
+  }
+#else // ! SETUP_SM_H
   offset = pio_add_program(pio0, &wait_sel_program);
   conf = wait_sel_program_get_default_config(offset);
   sm_config_set_in_pins(&conf, 0);
   sm_config_set_in_shift(&conf, true, true, 32);
 
-#if BECKER_REV0
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, ADDR_WIDTH, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
+#if BECKER_REV0
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, RW_PIN, 4, false);
 #else
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, 18, false);
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, CTS_PIN, 2, false);
 #endif // BECKER_REV0
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
 
   sm_config_set_jmp_pin(&conf, RW_PIN);
 
   pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
   pio_sm_set_enabled(pio0, SM_WAITSEL, true);
+#endif // SETUP_SM_H
 
 #if USE_IRQ
   pio_set_irq0_source_enabled(pio0, pis_interrupt0, true);
@@ -206,14 +236,12 @@ void __time_critical_func(romulan)(void)
   __asm volatile ("cpsid i"); // Disable all interrupts on the executing core
 
   while (true) {
-#if 0
-    while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
-      tight_loop_contents();
-
-    bus.combined = pio0->rxf[SM_WAITSEL];
-#else
+#ifdef SETUP_SM_H
+    bus.combined = pio_sm_get_blocking(state_machine[PSM_WAITSEL].pio,
+                                       state_machine[PSM_WAITSEL].sm);
+#else // ! SETUP_SM_H
     bus.combined = pio_sm_get_blocking(pio0, SM_WAITSEL);
-#endif
+#endif // SETUP_SM_H
 
 #if 0
     printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d COMBINED:0x%08x\r\n",
