@@ -14,6 +14,23 @@
 .define public CTS_PIN		20	; Cartridge ROM select
 .define public SCS_PIN		21	; Cartridge IO select
 
+.program decode_addrdata
+% c-sdk {
+typedef union {
+  struct {
+    uint32_t addr:ADDR_WIDTH;
+    uint32_t clock:1;
+    uint32_t rw:1;
+    uint32_t expand:1;
+    uint32_t dir:1;
+    uint32_t cts:1;
+    uint32_t scs:1;
+    uint32_t data:DATA_WIDTH;
+  } __attribute__((packed));
+  uint32_t combined;
+} __attribute__((packed)) BusSignals;
+%}
+
 ; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; ; Becker cart pinmap
 

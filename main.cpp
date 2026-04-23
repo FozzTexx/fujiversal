@@ -62,34 +62,6 @@
 #define ring_append(x) ({ring_buffer[ring_in] = x; \
       ring_in = (ring_in + 1) % sizeof(ring_buffer); })
 
-#if BECKER_REV0
-typedef union {
-  struct {
-    uint32_t data:DATA_WIDTH;
-    uint32_t addr:ADDR_WIDTH;
-    uint32_t rw:1;
-    uint32_t clk:1;
-    uint32_t cts:1;
-    uint32_t scs:1;
-  } __attribute__((packed));
-  uint32_t combined;
-} __attribute__((packed)) BusSignals;
-#else // ! BECKER_REV0
-typedef union {
-  struct {
-    uint32_t addr:ADDR_WIDTH;
-    uint32_t clk:1;
-    uint32_t rw:1;
-    uint32_t expand:1;
-    uint32_t dir:1;
-    uint32_t cts:1;
-    uint32_t scs:1;
-    uint32_t data:DATA_WIDTH;
-  } __attribute__((packed));
-  uint32_t combined;
-} __attribute__((packed)) BusSignals;
-#endif // BECKER_REV0
-
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
