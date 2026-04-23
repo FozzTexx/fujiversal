@@ -40,14 +40,9 @@
 
 #define USE_IRQ 0
 
-#ifdef SETUP_SM_H
 #define sm_pio(n) state_machine[n].pio
 #define pio_get_fifo(n) pio_sm_get_blocking(sm_pio(n), state_machine[n].sm);
 #define pio_put_fifo(n, d) pio_sm_put_blocking(sm_pio(n), state_machine[n].sm, d);
-#else
-#define SM_WAITSEL 0
-#define SM_READ    1
-#endif
 
 #define RING_SIZE 1024
 
@@ -100,11 +95,9 @@ int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
 
-#ifdef SETUP_SM_H
 #define PSM_WAITSEL 0
 #define PSM_READ    1
 pio_sm_t state_machine[3];
-#endif // SETUP_SM_H
 
 #if 0
 #define FIFO_SIZE 256
@@ -135,21 +128,7 @@ void setup_pio_irq_logic()
   uint offset;
 
 
-#if 0
-  // Set analog pins to digital
-  for (int pin = ANALOG_FIRST; pin <= ANALOG_LAST; pin++)
-    pio_gpio_init(pio0, pin);
-
-  // Init output pins
-  for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
-    pio_gpio_init(pio0, pin);
-#ifdef DIR_PIN
-  pio_gpio_init(pio0, DIR_PIN);
-#endif // DIR_PIN
-#endif
-
   // Setup state machine that checks when we are selected
-#ifdef SETUP_SM_H
   {
     pin_range_t waitsel_input_pins[] = {
       { A0_PIN, ADDR_WIDTH },
@@ -177,25 +156,6 @@ void setup_pio_irq_logic()
 
     setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
   }
-#else // ! SETUP_SM_H
-  offset = pio_add_program(pio0, &wait_sel_program);
-  conf = wait_sel_program_get_default_config(offset);
-  sm_config_set_in_pins(&conf, 0);
-  sm_config_set_in_shift(&conf, true, true, 32);
-
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, ADDR_WIDTH, false);
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
-#if BECKER_REV0
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, RW_PIN, 4, false);
-#else
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, CTS_PIN, 2, false);
-#endif // BECKER_REV0
-
-  sm_config_set_jmp_pin(&conf, RW_PIN);
-
-  pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
-  pio_sm_set_enabled(pio0, SM_WAITSEL, true);
-#endif // SETUP_SM_H
 
 #if USE_IRQ
   pio_set_irq0_source_enabled(pio0, pis_interrupt0, true);
@@ -204,7 +164,6 @@ void setup_pio_irq_logic()
 #endif
 
   // Setup state machine that handles CPU read by putting byte on bus
-#ifdef SETUP_SM_H
   {
     // Init the data pins as input so they start in Hi-Z state
     pin_range_t read_input_pins[] = {
@@ -232,27 +191,6 @@ void setup_pio_irq_logic()
 
     setup_state_machine(&state_machine[PSM_READ], &read_setup);
   }
-#else // ! SETUP_SM_H
-  state_machine[PSM_READ].pio = pio0;
-  state_machine[PSM_READ].sm = 1;
-  offset = pio_add_program(state_machine[PSM_READ].pio, &read_program);
-  conf = read_program_get_default_config(offset);
-
-  sm_config_set_out_pins(&conf, D0_PIN, DATA_WIDTH);
-  pio_sm_set_consecutive_pindirs(state_machine[PSM_READ].pio, state_machine[PSM_READ].sm, D0_PIN, DATA_WIDTH, false);
-#ifdef DIR_PIN
-  pio_sm_set_consecutive_pindirs(state_machine[PSM_READ].pio, state_machine[PSM_READ].sm, DIR_PIN, 1, true);
-  sm_config_set_sideset_pins(&conf, DIR_PIN);
-  sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
-#else
-  pio_sm_set_consecutive_pindirs(state_machine[PSM_READ].pio, state_machine[PSM_READ].sm, 31, 1, true);
-  sm_config_set_sideset_pins(&conf, 31);
-  sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
-#endif // DIR_PIN
-
-  pio_sm_init(state_machine[PSM_READ].pio, state_machine[PSM_READ].sm, offset, &conf);
-  pio_sm_set_enabled(state_machine[PSM_READ].pio, state_machine[PSM_READ].sm, true);
-#endif // SETUP_SM_H
 
 #ifdef DEBUG_PIN
   gpio_init(DEBUG_PIN);

@@ -1,17 +1,18 @@
+.define public DATA_WIDTH	8
+.define public ADDR_WIDTH	16
+.define public PIN_COUNT 32
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; PicoROM pinmap
 
-.define public D0_PIN 22
-.define public A0_PIN 0
-.define public A14_PIN A0_PIN + 14
-.define public A15_PIN A0_PIN + 15
-
-.define public CLOCK_PIN 16	// 6809 clock E signal
-.define public RW_PIN 17	// 6809 R/W signal
-.define public EXP_PIN 18	// PicoROM IO expander
-.define public DIR_PIN 19	// set direction of data pin buffer
-.define public CTS_PIN 20	// Cartridge ROM select
-.define public SCS_PIN 21	// Cartridge IO select
+.define public A0_PIN		0	; A0..A15 are consecutive
+.define public D0_PIN		22	; D0..D7 are consecutive
+.define public CLOCK_PIN	16	;	 6809 clock E signal
+.define public RW_PIN		17	;	 6809 R/W signal
+.define public EXP_PIN		18	// PicoROM IO expander
+.define public DIR_PIN		19	// set direction of data pin buffer
+.define public CTS_PIN		20	; Cartridge ROM select
+.define public SCS_PIN		21	; Cartridge IO select
 
 ; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; ; Becker cart pinmap
@@ -29,12 +30,6 @@
 ; ;.define public DEBUG_PIN 28	// for debugging
 ; ;.define public DEBUG2_PIN 29	// for debugging
 
-.define public PIN_COUNT 32
-.define public DATA_WIDTH 8
-.define public ADDR_WIDTH 16
-
-.define	       IRQ_SEL 0
-
 .program wait_sel
 idle:
 	mov osr, ~pins		; read in all pins inverted
@@ -42,9 +37,6 @@ idle:
 	out null, CTS_PIN	; dump lower bits
 	out x, 2		; grab the two /CTS /SCS bits we want
 	jmp !x idle		; if X is zero then /CTS and /SCS are high
-	;; out null, A14_PIN	; dump lower bits
-	;; out x, 2		; grab the A15 and A14 bits we want
-	;; jmp x-- idle		; if X is not zero then A15 or A14 are low
 
 	jmp pin send		; If R/W is high no need to wait
 	wait 1 gpio CLOCK_PIN	; wait for CLOCK
