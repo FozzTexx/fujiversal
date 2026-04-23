@@ -14,7 +14,7 @@ ROM_AFILES = $(addprefix $(MSX_DIR)/src/,portio.s timeout.s)
 ROM_H = $(BUILD_DIR)/rom.h
 UF2_BINARY = $(BUILD_DIR)/fujiversal_$(BOARD).uf2
 
-SRC = main.cpp setup_sm.cpp setup_sm.h FujiBusPacket.cpp		\
+SRC = main.cpp board_defs.h setup_sm.cpp setup_sm.h FujiBusPacket.cpp		\
       FujiBusPacket.h boards/$(BOARD).pio fujiDeviceID.h fujiCommandID.h $(ROM_H)
 
 $(BUILD_DIR)/$(FIRMWARE): $(SRC) $(BUILD_MAKE)
