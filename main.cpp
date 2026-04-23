@@ -1,5 +1,5 @@
 #include "bus.pio.h"
-#include "build/rom.h"
+#include "build/picorom_coco/rom.h"
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"

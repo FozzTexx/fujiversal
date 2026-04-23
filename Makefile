@@ -1,28 +1,39 @@
-BUILD_DIR = build
-BUILD_MAKE = $(BUILD_DIR)/Makefile
-FIRMWARE = fujiversal.uf2
-MSX_DIR = msxio
+#BOARD ?= msx_proto_260402
 #ROM_IMAGE = $(MSX_DIR)/r2r/msxrom/disk.rom
-ROM_IMAGE ?= hdbdw3bc3.rom
+
+BOARD ?= picorom_coco
+#BOARD ?= coco_proto_260402
+ROM_IMAGE = hdbdw3bc3.rom
+
+BUILD_DIR = build/$(BOARD)
+BUILD_MAKE = $(BUILD_DIR)/Makefile
+FIRMWARE = fujiversal_$(BOARD).uf2
+MSX_DIR = msxio
 ROM_CFILES = $(addprefix $(MSX_DIR)/src/,main.c)
 ROM_AFILES = $(addprefix $(MSX_DIR)/src/,portio.s timeout.s)
 ROM_H = $(BUILD_DIR)/rom.h
-# MSX_DIR = msxdisk
-# ROM_IMAGE = $(MSX_DIR)/disk.rom
-# ROM_CFILES = $(addprefix $(MSX_DIR)/,disk.c)
-# ROM_AFILES = $(addprefix $(MSX_DIR)/,header.s jptable.s io.s)
+UF2_BINARY = $(BUILD_DIR)/fujiversal.uf2
+#UF2_BINARY = $(BUILD_DIR)/fujiversal_$(BOARD).uf2
 
-SRC = main.cpp FujiBusPacket.cpp FujiBusPacket.h bus.pio $(ROM_H)	\
-      fujiDeviceID.h fujiCommandID.h setup_sm.cpp setup_sm.h
+SRC = main.cpp setup_sm.cpp setup_sm.h FujiBusPacket.cpp		\
+      FujiBusPacket.h bus.pio fujiDeviceID.h fujiCommandID.h $(ROM_H)
 
 $(BUILD_DIR)/$(FIRMWARE): $(SRC) $(BUILD_MAKE)
 	defoogi make -C $(BUILD_DIR)
 
-$(BUILD_MAKE): CMakeLists.txt
-	defoogi cmake -B $(BUILD_DIR)
+$(BUILD_MAKE): CMakeLists.txt #boards/$(BOARD).pio
+	defoogi cmake -B $(BUILD_DIR) -DBOARD=$(BOARD)
 
 upload: $(BUILD_DIR)/$(FIRMWARE)
-	defoogi sudo picotool load -v -x build/fujiversal.uf2 -f
+	defoogi sudo picotool load -v -x $(UF2_BINARY) -f
+
+picorom msxrp2350 msx_proto_260402 coco_proto_260402:
+	$(MAKE) BOARD=$@
+
+all: $(BOARD)
+
+clean:
+	rm -rf build
 
 $(ROM_H): $(ROM_IMAGE) | $(BUILD_DIR)
 	xxd -i -n disk_rom $< > $@
