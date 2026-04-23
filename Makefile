@@ -29,3 +29,6 @@ $(ROM_H): $(ROM_IMAGE) | $(BUILD_DIR)
 
 $(ROM_IMAGE): $(ROM_CFILES) $(ROM_AFILES)
 	defoogi make -C $(MSX_DIR)
+
+$(BUILD_DIR):
+	mkdir -p $@
