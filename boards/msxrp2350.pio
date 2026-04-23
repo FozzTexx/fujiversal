@@ -1,0 +1,25 @@
+;; this file will get prepended to bus.pio
+
+.define public A0_PIN 0
+.define public SLTSL_PIN 17
+.define public D0_PIN 20
+.define public PIN_COUNT 32
+.define public DATA_WIDTH 8
+.define public ADDR_WIDTH 16
+.define public WAIT_CYCLES 8
+
+.program decode_addrdata
+% c-sdk {
+typedef union {
+  struct {
+    uint32_t addr:ADDR_WIDTH;
+    uint32_t resv:4;
+    uint32_t data:DATA_WIDTH;
+    uint32_t rd:1;
+    uint32_t wr:1;
+    uint32_t iorq:1;
+    uint32_t memrq:1;
+  } __attribute__((packed));
+  uint32_t combined;
+} __attribute__((packed)) BusSignals;
+%}

@@ -1,32 +1,71 @@
+.pio_version 1
+
+;; this file will get prepended to bus.pio
+
 .define public DATA_WIDTH	8
 .define public ADDR_WIDTH	16
-.define public PIN_COUNT	32
 
 .define public A0_PIN		0	; A0..A15 are consecutive
-.define public D0_PIN		22	; D0..D7 are consecutive
-.define public CLOCK_PIN	16	; 6809 clock E signal
-.define public RW_PIN		17	; 6809 R/W signal
-.define public EXP_PIN		18	; PicoROM IO expander
-.define public DIR_PIN		19	; set direction of data pin buffer
-.define public CTS_PIN		20	; Cartridge ROM select
-.define public SCS_PIN		21	; Cartridge IO select
+.define public D0_PIN		20	; D0..D7 are consecutive
+.define public RW_PIN		29	; 6809 R/W signal
+;; .define public SCS_PIN		30	; Cartridge IO select
+;; .define public CTS_PIN		32	; Cartridge ROM select
+.define public SCS_PIN		17	; Cartridge IO select
+.define public CTS_PIN		16	; Cartridge ROM select
+;; .define public CLOCK_PIN	33	; 6809 clock E signal
+.define public CLOCK_PIN	18	; 6809 clock E signal
+.define public RESET_PIN	35	; RESET
+
+.define public PIN_COUNT 32
+
+.define public IRQ_SEL 0
 
 .program decode_addrdata
 % c-sdk {
 typedef union {
   struct {
     uint32_t addr:ADDR_WIDTH;
-    uint32_t clock:1;
-    uint32_t rw:1;
-    uint32_t expand:1;
-    uint32_t dir:1;
     uint32_t cts:1;
     uint32_t scs:1;
+    uint32_t clock:1;
+    uint32_t resv:1;
     uint32_t data:DATA_WIDTH;
+    uint32_t resv2:1;
+    uint32_t rw:1;
   } __attribute__((packed));
   uint32_t combined;
 } __attribute__((packed)) BusSignals;
 %}
+
+;; .program wait_sel
+;; .define NUM_PINS SCS_PIN - CTS_PIN + 1
+
+;; .wrap_target
+;; idle:
+;; 	irq IRQ_SEL		; Signal that we're selected
+;; 	mov osr, ~pins		; read in all pins inverted
+
+;; 	;out null, CTS_PIN	; dump lower bits
+;; 	out x, NUM_PINS		; grab the two /CTS /SCS bits we want
+;; 	jmp !x idle		; if X is zero then /CTS and /SCS are high
+
+;; ;	wait 1 gpio CLOCK_PIN	; wait for E
+;; send:
+;; 	irq IRQ_SEL		; Signal that we're selected
+;; 	wait 0 gpio CLOCK_PIN
+;; .wrap
+
+;; .program read
+;; .wrap_target
+;; 	pull block			; get byte to write
+;; 	;; out pins, DATA_WIDTH		; write byte to GPIO D0-D7
+;; 	;; mov osr, ~null			; put a whole bunch of 1s in OSR
+;; 	;; out pindirs, DATA_WIDTH		; change D0-D7 to outputs
+;; 	;; wait 1 gpio CLOCK_PIN		; wait for start of cycle
+;; 	;; wait 0 gpio CLOCK_PIN		; wait for end of cycle
+;; 	;; mov osr, null			; load up 0s
+;; 	;; out pindirs, DATA_WIDTH		; change D0-D7 back to inputs
+;; .wrap
 
 .program wait_sel
 idle:
