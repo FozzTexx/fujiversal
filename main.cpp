@@ -16,6 +16,7 @@
 #include <string>
 
 #define HEARTBEAT 0
+int err_waitsel, err_sendbus, err_read;
 
 #define IO_BASE    0xFF41
 #define IO_GETC    1
@@ -64,7 +65,8 @@ uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
 
 #define PSM_WAITSEL 0
-#define PSM_READ    1
+#define PSM_SENDBUS 1
+#define PSM_READ    2
 pio_sm_t state_machine[3];
 
 #if USE_IRQ
@@ -95,12 +97,20 @@ void setup_pio_irq_logic()
   // Setup state machine that checks when we are selected
   {
     pin_range_t waitsel_input_pins[] = {
+#if defined(BOARD_coco_proto_260402)
+      { CTS_PIN, 1         },
+      { 31, 1, true        }, // unused middle pin needs to be inverted to avoid false zero
+      { SCS_PIN, 1         },
+      { RW_PIN, 1          },
+      { CLOCK_PIN, 1       },
+#elif defined(BOARD_picorom_coco)
       { A0_PIN, ADDR_WIDTH },
       { D0_PIN, DATA_WIDTH },
       { CTS_PIN, 1         },
       { SCS_PIN, 1         },
       { RW_PIN, 1          },
       { CLOCK_PIN, 1       },
+#endif
     };
 
     sm_setup_t waitsel_setup = {
@@ -108,14 +118,20 @@ void setup_pio_irq_logic()
       .get_default_config = wait_sel_program_get_default_config,
       .input_pins         = waitsel_input_pins,
       .input_count        = ARRAY_SIZE(waitsel_input_pins),
+#if defined(BOARD_picorom_coco)
       .in_instr_base      = 0,
+#else
+      .in_instr_base      = SCS_PIN,
+#endif
       .out_instr_base     = -1,
+#if defined(BOARD_picorom_coco)
       .push_threshold     = 32,
+#endif
       .sideset_base       = -1,
       .jmp_pin            = RW_PIN,
     };
 
-    setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
+    err_waitsel = setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
   }
 
 #if USE_IRQ
@@ -123,6 +139,27 @@ void setup_pio_irq_logic()
   irq_set_exclusive_handler(PIO0_IRQ_0, pio_irq_handler);
   irq_set_enabled(PIO0_IRQ_0, true);
 #endif
+
+  // Setup state machine that sends addr/data bus signals
+  {
+    pin_range_t send_bus_input_pins[] = {
+      {0, 32}, // Grab all the pins
+    };
+
+    sm_setup_t send_bus_setup = {
+      .program            = &send_bus_program,
+      .get_default_config = send_bus_program_get_default_config,
+      .input_pins         = send_bus_input_pins,
+      .input_count        = ARRAY_SIZE(send_bus_input_pins),
+      .in_instr_base      = 0,
+      .out_instr_base     = -1,
+      .push_threshold     = 32,
+      .sideset_base       = -1,
+      .jmp_pin            = -1,
+    };
+
+    err_sendbus = setup_state_machine(&state_machine[PSM_SENDBUS], &send_bus_setup);
+  }
 
   // Setup state machine that handles CPU read by putting byte on bus
   {
@@ -158,7 +195,7 @@ void setup_pio_irq_logic()
       .jmp_pin            = -1,
     };
 
-    setup_state_machine(&state_machine[PSM_READ], &read_setup);
+    err_read = setup_state_machine(&state_machine[PSM_READ], &read_setup);
   }
 
 #ifdef DEBUG_PIN
@@ -189,11 +226,11 @@ void __time_critical_func(romulan)(void)
   __asm volatile ("cpsid i"); // Disable all interrupts on the executing core
 
   while (true) {
-    bus.combined = pio_get_fifo(PSM_WAITSEL);
+    bus.combined = pio_get_fifo(PSM_SENDBUS);
 
 #if 0
     printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d CLK:%d COMBINED:0x%08x\r\n",
-           bus.addr, bus.data, bus.cts, bus.scs, bus.rw, bus.clock, bus.combined);
+           bus.addr, bus.data, 0, bus.scs, bus.rw, 0, bus.combined);
 #endif
 
 #if 0
@@ -365,6 +402,15 @@ int main()
     printf("Watchdog rebooted!\r\n");
 
   watchdog_enable(100, 1);
+
+#if 1
+  printf("PSM_WAITSEL %d:%d = %d\r\n", pio_get_index(state_machine[PSM_WAITSEL].pio),
+         state_machine[PSM_WAITSEL].sm, err_waitsel);
+  printf("PSM_SENDBUS %d:%d = %d\r\n", pio_get_index(state_machine[PSM_SENDBUS].pio),
+         state_machine[PSM_SENDBUS].sm, err_sendbus);
+  printf("PSM_READ %d:%d = %d\r\n", pio_get_index(state_machine[PSM_READ].pio),
+         state_machine[PSM_READ].sm, err_read);
+#endif
 
   while (true) {
     watchdog_update();

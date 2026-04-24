@@ -62,7 +62,7 @@ int setup_state_machine(pio_sm_t *pio_sm, const sm_setup_t *cfg)
   if (gpio_top <= gpio_base)
     return 2;
 
-  if (gpio_base < 16 && gpio_top > 31)
+  if (gpio_base < 16 && gpio_top > 32)
     return 6;
 
 #if PICO_RP2040

@@ -6,58 +6,62 @@
 .define public D0_PIN		20	; D0..D7 are consecutive
 .define public RW_PIN		29	; 6809 R/W signal
 
-.define public CTS_PIN		16	; Cartridge ROM select
-.define public SCS_PIN		17	; Cartridge IO select
-.define public CLOCK_PIN	18	; 6809 clock E signal
+// .define public CTS_PIN		16	; Cartridge ROM select
+// .define public SCS_PIN		17	; Cartridge IO select
+// .define public CLOCK_PIN	18	; 6809 clock E signal
 
-;.define public SCS_PIN		30	; Cartridge IO select
-;.define public CTS_PIN		32	; Cartridge ROM select
-;.define public CLOCK_PIN	33	; 6809 clock E signal
+.define public SCS_PIN		30	; Cartridge IO select
+.define public CTS_PIN		32	; Cartridge ROM select
+.define public CLOCK_PIN	33	; 6809 clock E signal
 
 .define public RESET_PIN	35	; RESET
+
+.define public IRQ_SEL 0
 
 .program decode_addrdata
 % c-sdk {
 typedef union {
   struct {
     uint32_t addr:ADDR_WIDTH;
-    uint32_t cts:1;
-    uint32_t scs:1;
-    uint32_t clock:1;
-    uint32_t resv:1;
+    uint32_t resv:4;
     uint32_t data:DATA_WIDTH;
     uint32_t resv2:1;
     uint32_t rw:1;
+    uint32_t scs:1;
   } __attribute__((packed));
   uint32_t combined;
 } __attribute__((packed)) BusSignals;
 %}
 
 .program wait_sel
+.define NUM_PINS CTS_PIN - SCS_PIN + 1
 idle:
 	mov osr, ~pins		; read in all pins inverted
 
-	out null, CTS_PIN	; dump lower bits
-	out x, 2		; grab the two /CTS /SCS bits we want
+	out x, NUM_PINS		; grab the two /CTS /SCS bits we want
 	jmp !x idle		; if X is zero then /CTS and /SCS are high
 
 	jmp pin send		; If R/W is high no need to wait
 	wait 1 gpio CLOCK_PIN	; wait for CLOCK
 
 send:
-	mov y, pins		; re-read all pins normal
-	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
-
+	irq IRQ_SEL		; Signal that we're selected
 	wait 0 gpio CLOCK_PIN	; wait for end of this bus cycle
 
 .wrap_target
 	; Check if CTS/SCS still asserted into next cycle
 	wait 1 gpio CLOCK_PIN	; wait for start of next cycle
 	mov osr, ~pins		; read in all pins
-	out null, CTS_PIN	; dump lower bits
-	out y, 2		; grab the two /CTS /SCS bits we want
+	out y, NUM_PINS		; grab the two /CTS /SCS bits we want
 	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
 	wait 0 gpio CLOCK_PIN	; wait for end of this cycle
+.wrap
+
+.program send_bus
+.wrap_target
+	wait 1 irq next IRQ_SEL ; IRQ sent when we are selected
+	mov y, pins		; read in all pins
+	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
 .wrap
 
 .program read
