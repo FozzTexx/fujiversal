@@ -45,9 +45,6 @@
 
 #define RING_SIZE 1024
 
-#define ANALOG_FIRST 26
-#define ANALOG_LAST  29
-
 #define POW2_CEIL(x_) ({      \
     unsigned int x = x_; \
     x -= 1;              \
@@ -69,16 +66,6 @@ volatile bool ramrom_needs_activate = false;
 #define PSM_WAITSEL 0
 #define PSM_READ    1
 pio_sm_t state_machine[3];
-
-#if 0
-#define FIFO_SIZE 256
-uint32_t fifo_buffer[FIFO_SIZE];
-volatile uint32_t fifo_in = 0, fifo_out = 0;
-#define fifo_append(x) ({                       \
-      fifo_buffer[fifo_in] = x;                 \
-      fifo_in = (fifo_in + 1) % FIFO_SIZE;      \
-    })
-#endif
 
 #if USE_IRQ
 bool selected = 0;
@@ -110,7 +97,10 @@ void setup_pio_irq_logic()
     pin_range_t waitsel_input_pins[] = {
       { A0_PIN, ADDR_WIDTH },
       { D0_PIN, DATA_WIDTH },
-      { CTS_PIN, 2         },
+      { CTS_PIN, 1         },
+      { SCS_PIN, 1         },
+      { RW_PIN, 1          },
+      { CLOCK_PIN, 1       },
     };
 
     sm_setup_t waitsel_setup = {
@@ -202,8 +192,8 @@ void __time_critical_func(romulan)(void)
     bus.combined = pio_get_fifo(PSM_WAITSEL);
 
 #if 0
-    printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d COMBINED:0x%08x\r\n",
-           bus.addr, bus.data, bus.cts, bus.scs, bus.rw, bus.combined);
+    printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d CLK:%d COMBINED:0x%08x\r\n",
+           bus.addr, bus.data, bus.cts, bus.scs, bus.rw, bus.clock, bus.combined);
 #endif
 
 #if 0
