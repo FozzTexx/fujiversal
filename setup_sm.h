@@ -4,11 +4,10 @@
 #include <pico/stdlib.h>
 #include <hardware/pio.h>
 
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
-
 typedef struct {
   uint base;
   uint count;
+  bool direction;
   bool inverted;
 } pin_range_t;
 
@@ -19,10 +18,7 @@ typedef struct {
   uint sm_num;
 #endif
 
-  const pin_range_t *input_pins;
-  uint input_count;
-  const pin_range_t *output_pins;
-  uint output_count;
+  const pin_range_t *pins;
 
   int in_instr_base;   // -1 = skip
   int out_instr_base;  // -1 = skip, for sm_config_set_out_pins

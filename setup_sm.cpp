@@ -2,14 +2,13 @@
 
 //#define LED_PIN 39
 
-void sm_get_min_max_gpio(uint *gpio_base, uint *gpio_top,
-                         const pin_range_t *ranges, uint range_count)
+void sm_get_min_max_gpio(uint *gpio_base, uint *gpio_top, const pin_range_t *ranges)
 {
   uint idx;
   uint base, top;
 
 
-  for (base = *gpio_base, top = *gpio_top, idx = 0; idx < range_count; idx++) {
+  for (base = *gpio_base, top = *gpio_top, idx = 0; ranges[idx].count; idx++) {
     if (ranges[idx].base < base)
       base = ranges[idx].base;
     if (ranges[idx].base + ranges[idx].count > top)
@@ -21,7 +20,7 @@ void sm_get_min_max_gpio(uint *gpio_base, uint *gpio_top,
   return;
 }
 
-void sm_gpio_init(PIO pio, uint sm, uint base, uint count, bool inverted, bool out)
+void sm_gpio_init(PIO pio, uint sm, uint base, uint count, bool out, bool inverted)
 {
   uint idx;
 
@@ -56,8 +55,7 @@ int setup_state_machine(pio_sm_t *pio_sm, const sm_setup_t *cfg)
   // Find the lowest and highest GPIO required
   gpio_base = 255;
   gpio_top = 0;
-  sm_get_min_max_gpio(&gpio_base, &gpio_top, cfg->input_pins, cfg->input_count);
-  sm_get_min_max_gpio(&gpio_base, &gpio_top, cfg->output_pins, cfg->output_count);
+  sm_get_min_max_gpio(&gpio_base, &gpio_top, cfg->pins);
 
   if (gpio_top <= gpio_base)
     return 2;
@@ -93,17 +91,9 @@ int setup_state_machine(pio_sm_t *pio_sm, const sm_setup_t *cfg)
 
   conf = cfg->get_default_config(offset);
 
-  for (idx = 0; idx < cfg->input_count; idx++) {
-    sm_gpio_init(pio_sm->pio, pio_sm->sm, cfg->input_pins[idx].base,
-                 cfg->input_pins[idx].count, cfg->input_pins[idx].inverted,
-                 GPIO_IN);
-  }
-
-  for (idx = 0; idx < cfg->output_count; idx++) {
-    sm_gpio_init(pio_sm->pio, pio_sm->sm, cfg->output_pins[idx].base,
-                 cfg->output_pins[idx].count, cfg->output_pins[idx].inverted,
-                 GPIO_OUT);
-  }
+  for (idx = 0; cfg->pins[idx].count; idx++)
+    sm_gpio_init(pio_sm->pio, pio_sm->sm, cfg->pins[idx].base, cfg->pins[idx].count,
+                 cfg->pins[idx].direction, cfg->pins[idx].inverted);
 
   if (cfg->out_instr_base >= 0)
     sm_config_set_out_pins(&conf, cfg->out_instr_base, cfg->out_count);

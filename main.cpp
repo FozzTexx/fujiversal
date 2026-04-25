@@ -88,36 +88,37 @@ void setup_pio_irq_logic()
   uint offset;
 
 
-#ifdef RESET_PIN
-  gpio_init(RESET_PIN);
-  gpio_set_dir(RESET_PIN, GPIO_IN);
-  gpio_disable_pulls(RESET_PIN);
-#endif // RESET_PIN
+  // Init all GPIO pins to inputs with no pulls
+  for (uint pin = 0; pin < 48; pin++) {
+    gpio_init(pin);
+    gpio_set_dir(pin, GPIO_IN);
+    gpio_disable_pulls(pin);
+  }
 
   // Setup state machine that checks when we are selected
   {
-    pin_range_t waitsel_input_pins[] = {
+    pin_range_t waitsel_pins[] = {
 #if defined(BOARD_coco_proto_260402)
-      { CTS_PIN, 1         },
-      { 31, 1, true        }, // unused middle pin needs to be inverted to avoid false zero
-      { SCS_PIN, 1         },
-      { RW_PIN, 1          },
-      { CLOCK_PIN, 1       },
+      { CTS_PIN, 1, GPIO_IN         },
+      { 31, 1, GPIO_IN, true        }, // unused middle pin needs to be inverted to avoid false zero
+      { SCS_PIN, 1, GPIO_IN         },
+      { RW_PIN, 1, GPIO_IN          },
+      { CLOCK_PIN, 1, GPIO_IN       },
 #elif defined(BOARD_picorom_coco)
-      { A0_PIN, ADDR_WIDTH },
-      { D0_PIN, DATA_WIDTH },
-      { CTS_PIN, 1         },
-      { SCS_PIN, 1         },
-      { RW_PIN, 1          },
-      { CLOCK_PIN, 1       },
+      { A0_PIN, ADDR_WIDTH, GPIO_IN },
+      { D0_PIN, DATA_WIDTH, GPIO_IN },
+      { CTS_PIN, 1, GPIO_IN         },
+      { SCS_PIN, 1, GPIO_IN         },
+      { RW_PIN, 1, GPIO_IN          },
+      { CLOCK_PIN, 1, GPIO_IN       },
 #endif
+      {},
     };
 
     sm_setup_t waitsel_setup = {
       .program            = &wait_sel_program,
       .get_default_config = wait_sel_program_get_default_config,
-      .input_pins         = waitsel_input_pins,
-      .input_count        = ARRAY_SIZE(waitsel_input_pins),
+      .pins               = waitsel_pins,
 #if defined(BOARD_picorom_coco)
       .in_instr_base      = 0,
 #else
@@ -142,15 +143,15 @@ void setup_pio_irq_logic()
 
   // Setup state machine that sends addr/data bus signals
   {
-    pin_range_t send_bus_input_pins[] = {
-      {0, 32}, // Grab all the pins
+    pin_range_t send_bus_pins[] = {
+      {0, 32, GPIO_IN }, // Grab all the pins
+      {},
     };
 
     sm_setup_t send_bus_setup = {
       .program            = &send_bus_program,
       .get_default_config = send_bus_program_get_default_config,
-      .input_pins         = send_bus_input_pins,
-      .input_count        = ARRAY_SIZE(send_bus_input_pins),
+      .pins               = send_bus_pins,
       .in_instr_base      = 0,
       .out_instr_base     = -1,
       .push_threshold     = 32,
@@ -164,24 +165,18 @@ void setup_pio_irq_logic()
   // Setup state machine that handles CPU read by putting byte on bus
   {
     // Init the data pins as input so they start in Hi-Z state
-    pin_range_t read_input_pins[] = {
-      { D0_PIN, DATA_WIDTH },
-    };
+    pin_range_t read_pins[] = {
+      { D0_PIN, DATA_WIDTH, GPIO_IN },
 #ifdef DIR_PIN
-    pin_range_t read_output_pins[] = {
-      { DIR_PIN, 1         },
-    };
+      { DIR_PIN, 1, GPIO_OUT        },
 #endif
+      {},
+    };
 
     sm_setup_t read_setup = {
       .program            = &read_program,
       .get_default_config = read_program_get_default_config,
-      .input_pins         = read_input_pins,
-      .input_count        = ARRAY_SIZE(read_input_pins),
-#ifdef DIR_PIN
-      .output_pins        = read_output_pins,
-      .output_count       = ARRAY_SIZE(read_output_pins),
-#endif
+      .pins               = read_pins,
       .in_instr_base      = -1,
       .out_instr_base     = D0_PIN,
       .out_count          = DATA_WIDTH,
