@@ -11,12 +11,6 @@
 #include <hardware/irq.h>
 
 #include <string>
-#include <stdint.h>
-
-typedef struct {
-    uint32_t addr;
-    uint8_t data;
-} AddrData;
 
 #if defined(BOARD_picorom)
 #include "picorom.pio.h"
@@ -98,7 +92,7 @@ void setup_pio_irq_logic()
   sm_config_set_in_pins(&conf, 0);
   sm_config_set_in_shift(&conf, true, true, 32);
 
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, ADDRESS_WIDTH, false);
+  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, ADDR_WIDTH, false);
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, OE_PIN, 2, false);
   pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
 
@@ -132,8 +126,7 @@ void setup_pio_irq_logic()
 
 void __time_critical_func(romulan)(void)
 {
-  uint32_t addrdata;
-  AddrData ad;
+  BusSignals bus;
   uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(ROM));
   uint8_t *rom_ptr = ROM;
   uint32_t last_addr = -1;
@@ -145,24 +138,24 @@ void __time_critical_func(romulan)(void)
     while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
       tight_loop_contents();
 
-    addrdata = pio0->rxf[SM_WAITSEL];
-    ad = decode_addrdata(addrdata);
-    if (ad.addr == last_addr)
+    bus.combined = pio0->rxf[SM_WAITSEL];
+    if (bus.addr == last_addr)
       continue;
 
     if (!ramrom_ptr && rom_ptr != ROM)
       rom_ptr == ROM;
 
-    if (ramrom_needs_activate) {// && addr == RAMROM_ACTIVATE_ADDR) {
-      printf("Activating RAM\n"); // FIXME - why is this print necessary?
+    if (ramrom_needs_activate) {
+      //printf("Activating RAM\n"); // FIXME - why is this print necessary?
+      __dsb(); // Now printf isn't necessary!
       if (ramrom_ptr)
         rom_ptr = ramrom_ptr;
       ramrom_needs_activate = false;
     }
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
-    if (IO_BASE <= ad.addr && ad.addr < IO_BASE + 4) {
-      switch (ad.addr & 0x3) {
+    if (IO_BASE <= bus.addr && bus.addr < IO_BASE + 4) {
+      switch (bus.addr & 0x3) {
       case IO_GETC: // Read byte
         pio0->txf[SM_READ] = sio_hw->fifo_rd;
         break;
@@ -170,19 +163,19 @@ void __time_critical_func(romulan)(void)
         pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
         break;
       case IO_PUTC: // Write byte
-        sio_hw->fifo_wr = addrdata;
+        sio_hw->fifo_wr = bus.combined;
         break;
       case IO_CONTROL: // Write control reg
         break;
       }
     }
-    else if (MSX_PAGE_SIZE <= ad.addr && ad.addr < MSX_PAGE_SIZE * 3) {
-      rom_offset = ad.addr - MSX_PAGE_SIZE;
+    else if (MSX_PAGE_SIZE <= bus.addr && bus.addr < MSX_PAGE_SIZE * 3) {
+      rom_offset = bus.addr - MSX_PAGE_SIZE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       pio0->txf[SM_READ] = rom_ptr[rom_offset];
     }
 
-    last_addr = ad.addr;
+    last_addr = bus.addr;
   }
 
   return;
@@ -266,8 +259,7 @@ void process_command(ByteBuffer &buffer)
 
 int main()
 {
-  uint32_t addrdata;
-  AddrData ad;
+  BusSignals bus;
   int input;
   unsigned int count = 0;
   unsigned char ring_buffer[RING_SIZE];
@@ -286,17 +278,19 @@ int main()
 
   while (true) {
     if (multicore_fifo_rvalid()) {
-      addrdata = multicore_fifo_pop_blocking();
-      ad = decode_addrdata(addrdata);
-      //printf("Received $%04x:$%02x\n", ad.addr, ad.data);
-      putchar(ad.data);
+      bus.combined = multicore_fifo_pop_blocking();
+#if 0
+      printf("Received $%04x:$%02x\r\n", bus.addr, bus.data);
+#else
+      putchar(bus.data);
+#endif
     }
 
     if (command_buf.size()) {
       now = to_ms_since_boot(get_absolute_time());
       // Did we timeout waiting for final SLIP_END?
       if (now - last_cc_seen > 50) {
-        printf("Command timeout\n");
+        //printf("Command timeout\r\n");
         for (char c : command_buf)
           ring_append((uint8_t) c);
         command_buf.clear();
@@ -318,7 +312,7 @@ int main()
         if (command_buf.size()) {
           // If second char is not a command for us, send command_buf to RBS
           if (command_size == 2 && input != FUJI_DEVICEID_DBC) {
-            printf("Command not us\n");
+            //printf("Command not us\r\n");
             for (char c : command_buf)
               ring_append((uint8_t) c);
             command_buf.clear();

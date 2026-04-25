@@ -7,15 +7,21 @@
 .define public D0_PIN 22
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
-.define public ADDRESS_WIDTH 18
+.define public ADDR_WIDTH 18
 .define public WAIT_CYCLES 5
 
 .program decode_addrdata
 % c-sdk {
-static inline AddrData decode_addrdata(uint32_t addrdata) {
-    AddrData result;
-    result.addr = addrdata & 0x3FFFF;
-    result.data = (addrdata >> (ADDRESS_WIDTH + 4)) & 0xFF;
-    return result;
-}
+typedef union {
+  struct {
+    uint32_t addr:ADDR_WIDTH;
+    uint32_t resv:2;
+    uint32_t expand:1;
+    uint32_t dir:1;
+    uint32_t oe:1;
+    uint32_t ce:1;
+    uint32_t data:DATA_WIDTH;
+  } __attribute__((packed));
+  uint32_t combined;
+} __attribute__((packed)) BusSignals;
 %}
