@@ -1,4 +1,4 @@
-#include "rom.h"
+#include "board_defs.h"
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
@@ -11,14 +11,6 @@
 #include <hardware/irq.h>
 
 #include <string>
-
-#if defined(BOARD_picorom)
-#include "picorom.pio.h"
-#elif defined(BOARD_msxrp2350)
-#include "msxrp2350.pio.h"
-#else
-#error "No board defined"
-#endif
 
 #define IO_BASE    0xBFFC
 #define IO_GETC    0

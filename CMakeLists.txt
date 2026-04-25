@@ -27,6 +27,7 @@ add_executable(${PROJECT_NAME}
 # Include board-specific configuration
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/boards)
 target_compile_definitions(${PROJECT_NAME} PRIVATE BOARD_${BOARD})
+target_compile_definitions(${PROJECT_NAME} PRIVATE BOARD_NAME=${BOARD})
 
 # Concatenate board-specific .pio with bus.pio
 set(BOARD_PIO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}.pio")
