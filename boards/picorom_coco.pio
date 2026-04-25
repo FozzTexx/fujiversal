@@ -101,6 +101,7 @@ check_fifo:
 // Init the data pins as input so they start in Hi-Z state
 static const pin_range_t read_pins[] = {
   { D0_PIN, DATA_WIDTH, GPIO_IN },
+  { DIR_PIN, 1, GPIO_OUT        },
   {},
 };
 

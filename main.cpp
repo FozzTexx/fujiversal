@@ -91,7 +91,7 @@ void setup_pio_irq_logic()
 
 
   // Init all GPIO pins to inputs with no pulls
-  for (uint pin = 0; pin < 48; pin++) {
+  for (uint pin = 0; pin < NUM_BANK0_GPIOS; pin++) {
     gpio_init(pin);
     gpio_set_dir(pin, GPIO_IN);
     gpio_disable_pulls(pin);
