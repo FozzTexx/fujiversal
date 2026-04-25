@@ -1,8 +1,8 @@
+#include "setup_sm.h"
 #include "board_defs.h"
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
-#include "setup_sm.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -99,41 +99,8 @@ void setup_pio_irq_logic()
 
   // Setup state machine that checks when we are selected
   {
-    pin_range_t waitsel_pins[] = {
-#if defined(BOARD_coco_proto_260402)
-      { CTS_PIN, 1, GPIO_IN         },
-      { 31, 1, GPIO_IN, true        }, // unused middle pin needs to be inverted to avoid false zero
-      { SCS_PIN, 1, GPIO_IN         },
-      { RW_PIN, 1, GPIO_IN          },
-      { CLOCK_PIN, 1, GPIO_IN       },
-#elif defined(BOARD_picorom_coco)
-      { A0_PIN, ADDR_WIDTH, GPIO_IN },
-      { D0_PIN, DATA_WIDTH, GPIO_IN },
-      { CTS_PIN, 1, GPIO_IN         },
-      { SCS_PIN, 1, GPIO_IN         },
-      { RW_PIN, 1, GPIO_IN          },
-      { CLOCK_PIN, 1, GPIO_IN       },
-#endif
-      {},
-    };
-
-    sm_setup_t waitsel_setup = {
-      .program            = &wait_sel_program,
-      .get_default_config = wait_sel_program_get_default_config,
-      .pins               = waitsel_pins,
-#if defined(BOARD_picorom_coco)
-      .in_instr_base      = 0,
-#else
-      .in_instr_base      = SCS_PIN,
-#endif
-      .out_instr_base     = -1,
-#if defined(BOARD_picorom_coco)
-      .push_threshold     = 32,
-#endif
-      .sideset_base       = -1,
-      .jmp_pin            = RW_PIN,
-    };
-
+    sm_setup_t waitsel_setup {};
+    waitsel_init_setup(&waitsel_setup);
     err_waitsel = setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
   }
 
@@ -146,54 +113,16 @@ void setup_pio_irq_logic()
 #ifdef PSM_SENDBUS
   // Setup state machine that sends addr/data bus signals
   {
-    pin_range_t send_bus_pins[] = {
-      {0, 32, GPIO_IN }, // Grab all the pins
-      {},
-    };
-
-    sm_setup_t send_bus_setup = {
-      .program            = &send_bus_program,
-      .get_default_config = send_bus_program_get_default_config,
-      .pins               = send_bus_pins,
-      .in_instr_base      = 0,
-      .out_instr_base     = -1,
-      .push_threshold     = 32,
-      .sideset_base       = -1,
-      .jmp_pin            = -1,
-    };
-
+    sm_setup_t send_bus_setup {};
+    send_bus_init_setup(&send_bus_setup);
     err_sendbus = setup_state_machine(&state_machine[PSM_SENDBUS], &send_bus_setup);
   }
 #endif // PSM_SENDBUS
 
   // Setup state machine that handles CPU read by putting byte on bus
   {
-    // Init the data pins as input so they start in Hi-Z state
-    pin_range_t read_pins[] = {
-      { D0_PIN, DATA_WIDTH, GPIO_IN },
-#ifdef DIR_PIN
-      { DIR_PIN, 1, GPIO_OUT        },
-#endif
-      {},
-    };
-
-    sm_setup_t read_setup = {
-      .program            = &read_program,
-      .get_default_config = read_program_get_default_config,
-      .pins               = read_pins,
-      .in_instr_base      = -1,
-      .out_instr_base     = D0_PIN,
-      .out_count          = DATA_WIDTH,
-#ifdef DIR_PIN
-      .sideset_base       = DIR_PIN,
-#else
-      .sideset_base       = 31,
-#endif
-      .sideset_count      = 1,
-      .sideset_opt        = true,
-      .jmp_pin            = -1,
-    };
-
+    sm_setup_t read_setup {};
+    read_init_setup(&read_setup);
     err_read = setup_state_machine(&state_machine[PSM_READ], &read_setup);
   }
 
