@@ -18,11 +18,6 @@
 #define HEARTBEAT 0
 int err_waitsel, err_sendbus, err_read;
 
-#define IO_BASE    0xFF41
-#define IO_GETC    1
-#define IO_STATUS  0
-#define IO_PUTC    3
-#define IO_CONTROL 2
 #ifdef RW_PIN
 #define IO_TOP     (IO_BASE + 2)
 #else
@@ -31,8 +26,6 @@ int err_waitsel, err_sendbus, err_read;
 
 #define IO_FLAG_AVAIL   0x02
 
-#define COCO_ROM_BASE 0xC000
-#define COCO_ROM_TOP  0xFF00
 #define ROM disk_rom
 #define ROM_SEG_SIZE 16384
 #define ROM_MAX_SEGS 8
@@ -104,12 +97,6 @@ void setup_pio_irq_logic()
     err_waitsel = setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
   }
 
-#if USE_IRQ
-  pio_set_irq0_source_enabled(pio0, pis_interrupt0, true);
-  irq_set_exclusive_handler(PIO0_IRQ_0, pio_irq_handler);
-  irq_set_enabled(PIO0_IRQ_0, true);
-#endif
-
 #ifdef PSM_SENDBUS
   // Setup state machine that sends addr/data bus signals
   {
@@ -137,6 +124,12 @@ void setup_pio_irq_logic()
   gpio_set_dir(DEBUG2_PIN, GPIO_OUT);
   gpio_put(DEBUG2_PIN, 0);
 #endif // DEBUG2_PIN
+
+#if USE_IRQ
+  pio_set_irq0_source_enabled(pio0, pis_interrupt0, true);
+  irq_set_exclusive_handler(PIO0_IRQ_0, pio_irq_handler);
+  irq_set_enabled(PIO0_IRQ_0, true);
+#endif
 
   return;
 }
@@ -218,8 +211,8 @@ void __time_critical_func(romulan)(void)
              (bus.combined >> ADDR_WIDTH) & 0x3);
 #endif
     }
-    else if (COCO_ROM_BASE <= bus.addr && bus.addr < COCO_ROM_TOP) {
-      rom_offset = bus.addr - COCO_ROM_BASE;
+    else if (MEM_BANK_BASE <= bus.addr && bus.addr < MEM_BANK_TOP) {
+      rom_offset = bus.addr - MEM_BANK_BASE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       bus.data = rom_ptr[rom_offset];
       pio_put_fifo(PSM_READ, rom_ptr[rom_offset]);

@@ -11,6 +11,15 @@
 .define public CTS_PIN		20	; Cartridge ROM select
 .define public SCS_PIN		21	; Cartridge IO select
 
+.define public IO_BASE    0xFF41
+.define public IO_GETC    1
+.define public IO_STATUS  0
+.define public IO_PUTC    3
+.define public IO_CONTROL 2
+
+.define public MEM_BANK_BASE 0xC000
+.define public MEM_BANK_TOP  0xFF00
+
 .program decode_addrdata
 % c-sdk {
 typedef union {
