@@ -65,8 +65,10 @@ uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
 
 #define PSM_WAITSEL 0
-#define PSM_SENDBUS 1
-#define PSM_READ    2
+#define PSM_READ    1
+#if !defined(BOARD_picorom_coco)
+#define PSM_SENDBUS 2
+#endif
 pio_sm_t state_machine[3];
 
 #if USE_IRQ
@@ -141,6 +143,7 @@ void setup_pio_irq_logic()
   irq_set_enabled(PIO0_IRQ_0, true);
 #endif
 
+#ifdef PSM_SENDBUS
   // Setup state machine that sends addr/data bus signals
   {
     pin_range_t send_bus_pins[] = {
@@ -161,6 +164,7 @@ void setup_pio_irq_logic()
 
     err_sendbus = setup_state_machine(&state_machine[PSM_SENDBUS], &send_bus_setup);
   }
+#endif // PSM_SENDBUS
 
   // Setup state machine that handles CPU read by putting byte on bus
   {
@@ -221,7 +225,11 @@ void __time_critical_func(romulan)(void)
   __asm volatile ("cpsid i"); // Disable all interrupts on the executing core
 
   while (true) {
+#ifdef PSM_SENDBUS
     bus.combined = pio_get_fifo(PSM_SENDBUS);
+#else
+    bus.combined = pio_get_fifo(PSM_WAITSEL);
+#endif // PSM_SENDBUS
 
 #if 0
     printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d CLK:%d COMBINED:0x%08x\r\n",
@@ -401,10 +409,12 @@ int main()
 #if 1
   printf("PSM_WAITSEL %d:%d = %d\r\n", pio_get_index(state_machine[PSM_WAITSEL].pio),
          state_machine[PSM_WAITSEL].sm, err_waitsel);
-  printf("PSM_SENDBUS %d:%d = %d\r\n", pio_get_index(state_machine[PSM_SENDBUS].pio),
-         state_machine[PSM_SENDBUS].sm, err_sendbus);
   printf("PSM_READ %d:%d = %d\r\n", pio_get_index(state_machine[PSM_READ].pio),
          state_machine[PSM_READ].sm, err_read);
+#ifdef PSM_SENDBUS
+  printf("PSM_SENDBUS %d:%d = %d\r\n", pio_get_index(state_machine[PSM_SENDBUS].pio),
+         state_machine[PSM_SENDBUS].sm, err_sendbus);
+#endif // PSM_SENDBUS
 #endif
 
   while (true) {
