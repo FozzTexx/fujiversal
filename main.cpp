@@ -9,6 +9,7 @@
 #include <pico/multicore.h>
 #include <hardware/pio.h>
 #include <hardware/irq.h>
+#include <hardware/watchdog.h>
 
 #include <string>
 
@@ -268,7 +269,14 @@ int main()
   while (!stdio_usb_connected())
     ;
 
+  if (watchdog_caused_reboot())
+    printf("Watchdog rebooted!\r\n");
+
+  watchdog_enable(100, 1);
+
   while (true) {
+    watchdog_update();
+
     if (multicore_fifo_rvalid()) {
       bus.combined = multicore_fifo_pop_blocking();
 #if 0
