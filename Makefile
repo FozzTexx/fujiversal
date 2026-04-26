@@ -1,10 +1,16 @@
-BOARD ?= picorom
-ROM_FILE ?=
+BOARD ?= picorom_msx
+
+ifeq ($(BOARD),picorom_coco)
+  ROM_IMAGE = hdbdw3bc3.rom
+else
+  ROM_IMAGE = $(MSX_DIR)/r2r/msxrom/disk.rom
+endif
+
 BUILD_DIR = build/$(BOARD)
 BUILD_MAKE = $(BUILD_DIR)/Makefile
 FIRMWARE = fujiversal_$(BOARD).uf2
+
 MSX_DIR = msxio
-ROM_IMAGE = $(MSX_DIR)/r2r/msxrom/disk.rom
 ROM_CFILES = $(addprefix $(MSX_DIR)/src/,main.c)
 ROM_AFILES = $(addprefix $(MSX_DIR)/src/,portio.s timeout.s)
 ROM_H = $(BUILD_DIR)/rom.h
@@ -22,7 +28,7 @@ $(BUILD_MAKE): CMakeLists.txt boards/$(BOARD).pio
 upload: $(BUILD_DIR)/$(FIRMWARE)
 	defoogi sudo picotool load -v -x $(UF2_BINARY) -f
 
-picorom msxrp2350:
+picorom_msx picorom_coco msxrp2350:
 	$(MAKE) BOARD=$@
 
 all: $(BOARD)

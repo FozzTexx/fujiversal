@@ -1,11 +1,13 @@
 .define public DATA_WIDTH	8
-.define public ADDR_WIDTH	18
+.define public ADDR_WIDTH	16
 .define public PIN_COUNT	32
-.define public WAIT_CYCLES	8
+.define public WAIT_CYCLES	4
 
-.define public A0_PIN		4
-.define public D0_PIN		22
-.define public SLTSL_PIN	3
+.define public A0_PIN		0	; address 0..15
+.define public D0_PIN		22	; data 0..7
+.define public DIR_PIN		19	; set direction of data pin buffer
+.define public CS1_PIN		20	; /CS1 on MSX cartridge
+.define public SLTSL_PIN	21	; /SLTSL on MSX cartridge
 
 .define public IO_BASE		0xBFFC
 .define public IO_GETC		0
@@ -22,13 +24,13 @@
 % c-sdk {
 typedef union {
   struct {
-    uint32_t resv1:3;
-    uint32_t ce:1;
     uint32_t addr:ADDR_WIDTH;
-    uint32_t resv2:2;
-    uint32_t data:DATA_WIDTH;
+    uint32_t resv:2;
+    uint32_t expand:1;
     uint32_t dir:1;
-    uint32_t oe:1;
+    uint32_t cs1:1;
+    uint32_t sltsl:1;
+    uint32_t data:DATA_WIDTH;
   } __attribute__((packed));
   uint32_t combined;
 } __attribute__((packed)) BusSignals;
@@ -109,7 +111,9 @@ void read_init_setup(sm_setup_t *setup)
   setup->in_instr_base	    = -1;
   setup->out_instr_base	    = D0_PIN;
   setup->out_count	    = DATA_WIDTH;
-  setup->sideset_base	    = -1;
+  setup->sideset_base	    = DIR_PIN;
+  setup->sideset_count	    = 1;
+  setup->sideset_opt	    = true;
   setup->jmp_pin	    = SLTSL_PIN;
 
   return;

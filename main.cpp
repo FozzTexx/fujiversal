@@ -15,15 +15,12 @@
 
 #include <string>
 
-#define IO_BASE    0xBFFC
-#define IO_GETC    0
-#define IO_STATUS  1
-#define IO_PUTC    2
-#define IO_CONTROL 3
+#ifdef RW_PIN
+#define IO_TOP     (IO_BASE + 2)
+#else
+#define IO_TOP     (IO_BASE + 4)
+#endif
 
-#define IO_FLAG_AVAIL   0x80
-
-#define MSX_PAGE_SIZE 0x4000
 #define ROM disk_rom
 #define ROM_SEG_SIZE 16384
 #define ROM_MAX_SEGS 8
@@ -118,8 +115,10 @@ void __time_critical_func(romulan)(void)
 
   while (true) {
     bus.combined = pio_get_fifo(PSM_WAITSEL);
+#if !defined(BOARD_picorom_coco)
     if (bus.addr == last_addr)
       continue;
+#endif
 
 #if 0
     printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d CLK:%d COMBINED:0x%08x\r\n",
@@ -138,8 +137,14 @@ void __time_critical_func(romulan)(void)
     }
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
-    if (IO_BASE <= bus.addr && bus.addr < IO_BASE + 4) {
-      switch (bus.addr & 0x3) {
+    if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
+      unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
+#ifdef RW_PIN
+      if (!bus.rw)
+        io_reg |= 2;
+#endif // RW_PIN
+
+      switch (io_reg) {
       case IO_GETC: // Read byte
         pio_put_fifo(PSM_READ, sio_hw->fifo_rd);
         break;
@@ -153,8 +158,8 @@ void __time_critical_func(romulan)(void)
         break;
       }
     }
-    else if (MSX_PAGE_SIZE <= bus.addr && bus.addr < MSX_PAGE_SIZE * 3) {
-      rom_offset = bus.addr - MSX_PAGE_SIZE;
+    else if (BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP) {
+      rom_offset = bus.addr - BUS_ROM_BASE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
       pio_put_fifo(PSM_READ, rom_ptr[rom_offset]);
     }
@@ -178,14 +183,14 @@ void sendReplyPacket(fujiDeviceID_t source, bool ack, void *data, size_t length)
     return;
 }
 
-void process_command(ByteBuffer &buffer)
+bool process_command(ByteBuffer &buffer)
 {
   auto packet = FujiBusPacket::fromSerialized(buffer);
 
 
   if (!packet) {
-    printf("Failed to decode packet\n");
-    return;
+    //printf("Failed to decode packet\n");
+    return false;
   }
 
   switch (packet->command()) {
@@ -238,7 +243,7 @@ void process_command(ByteBuffer &buffer)
     break;
   }
 
-  return;
+  return true;
 }
 
 int main()
@@ -262,8 +267,10 @@ int main()
   while (!stdio_usb_connected())
     ;
 
+#if 0
   if (watchdog_caused_reboot())
     printf("Watchdog rebooted!\r\n");
+#endif
 
   watchdog_enable(100, 1);
 
@@ -311,7 +318,10 @@ int main()
             command_buf.clear();
           }
           else if (command_size > 1 && input == SLIP_END) {
-            process_command(command_buf);
+            if (!process_command(command_buf)) {
+              for (char c : command_buf)
+                ring_append((uint8_t) c);
+            }
             command_buf.clear();
           }
         }

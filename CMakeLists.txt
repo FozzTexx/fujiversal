@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.18)
 
-# Board selection (default: picorom)
+# Board selection (default: picorom_msx)
 if(NOT DEFINED BOARD)
-    set(BOARD "picorom")
+    set(BOARD "picorom_msx")
 endif()
 
 # Set board type for RP2350-based boards BEFORE importing SDK
