@@ -7,8 +7,8 @@
 .define public D0_PIN 22
 .define public PIN_COUNT 32
 .define public DATA_WIDTH 8
-.define public ADDR_WIDTH 18
-.define public WAIT_CYCLES 5
+.define public ADDR_WIDTH 16
+.define public WAIT_CYCLES 4
 
 .program decode_addrdata
 % c-sdk {
@@ -18,8 +18,8 @@ typedef union {
     uint32_t resv:2;
     uint32_t expand:1;
     uint32_t dir:1;
-    uint32_t oe:1;
-    uint32_t ce:1;
+    uint32_t cs1:1;
+    uint32_t sltsl:1;
     uint32_t data:DATA_WIDTH;
   } __attribute__((packed));
   uint32_t combined;
