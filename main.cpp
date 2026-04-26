@@ -10,6 +10,7 @@
 #include <hardware/pio.h>
 #include <hardware/irq.h>
 #include <hardware/watchdog.h>
+#include <hardware/clocks.h>
 
 #include <string>
 
@@ -261,6 +262,8 @@ int main()
   bool our_command = false;
   ByteBuffer command_buf;
 
+
+  set_sys_clock_khz(250000, true);
 
   multicore_launch_core1(romulan);
   stdio_init_all();
