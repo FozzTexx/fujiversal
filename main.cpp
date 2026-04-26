@@ -31,10 +31,14 @@
 #define SM_WAITSEL 0
 #define SM_READ    1
 
-#define RING_SIZE 1024
+typedef struct {
+  PIO pio;
+  uint sm;
+} pio_sm_t;
+pio_sm_t state_machine[2];
 
-#define pio_get_fifo(n) pio_sm_get_blocking(pio0, n)
-#define pio_put_fifo(n, d) pio_sm_put(pio0, n, d)
+#define pio_get_fifo(n) pio_sm_get_blocking(state_machine[n].pio, state_machine[n].sm)
+#define pio_put_fifo(n, d) pio_sm_put(state_machine[n].pio, state_machine[n].sm, d)
 
 #define POW2_CEIL(x_) ({      \
     unsigned int x = x_; \
@@ -46,6 +50,7 @@
     x = x | (x >>16);    \
     x + 1; })
 
+#define RING_SIZE 1024
 #define ring_append(x) ({ring_buffer[ring_in] = x; \
       ring_in = (ring_in + 1) % sizeof(ring_buffer); })
 
@@ -95,6 +100,8 @@ void setup_pio_irq_logic()
 
   pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
   pio_sm_set_enabled(pio0, SM_WAITSEL, true);
+  state_machine[SM_WAITSEL].pio = pio0;
+  state_machine[SM_WAITSEL].sm = SM_WAITSEL;
 
 #if USE_IRQ
   pio_set_irq0_source_enabled(pio0, pis_interrupt0, true);
@@ -117,6 +124,8 @@ void setup_pio_irq_logic()
 
   pio_sm_init(pio0, SM_READ, offset, &conf);
   pio_sm_set_enabled(pio0, SM_READ, true);
+  state_machine[SM_READ].pio = pio0;
+  state_machine[SM_READ].sm = SM_READ;
 
   return;
 }
