@@ -1,3 +1,4 @@
+#include "setup_sm.h"
 #include "board_defs.h"
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
@@ -20,6 +21,8 @@
 #define IO_PUTC    2
 #define IO_CONTROL 3
 
+#define IO_FLAG_AVAIL   0x80
+
 #define MSX_PAGE_SIZE 0x4000
 #define ROM disk_rom
 #define ROM_SEG_SIZE 16384
@@ -28,15 +31,10 @@
 
 #define USE_IRQ 0
 
-#define SM_WAITSEL 0
-#define SM_READ    1
+#define PSM_WAITSEL 0
+#define PSM_READ    1
 
-typedef struct {
-  PIO pio;
-  uint sm;
-} pio_sm_t;
 pio_sm_t state_machine[2];
-
 #define pio_get_fifo(n) pio_sm_get_blocking(state_machine[n].pio, state_machine[n].sm)
 #define pio_put_fifo(n, d) pio_sm_put(state_machine[n].pio, state_machine[n].sm, d)
 
@@ -78,54 +76,67 @@ void setup_pio_irq_logic()
   uint offset;
 
 
-  // Give control of DIR_PIN to PIO
-  pio_gpio_init(pio0, DIR_PIN);
-
-  // Set analog pins as digital
-  for (int pin = D0_PIN; pin < D0_PIN + 8; pin++)
-    pio_gpio_init(pio0, pin);
-
-  // Invert /CE pin to make it easer to use JMP in PIO
-  gpio_set_inover(CE_PIN, GPIO_OVERRIDE_INVERT);
+  // Init all GPIO pins to inputs with no pulls
+  for (uint pin = 0; pin < NUM_BANK0_GPIOS; pin++) {
+    gpio_init(pin);
+    gpio_set_dir(pin, GPIO_IN);
+    gpio_disable_pulls(pin);
+  }
 
   // Setup state machine that checks when we are selected
-  offset = pio_add_program(pio0, &wait_sel_program);
-  conf = wait_sel_program_get_default_config(offset);
-  sm_config_set_in_pins(&conf, 0);
-  sm_config_set_in_shift(&conf, true, true, 32);
+  {
+    pin_range_t waitsel_pins[] = {
+      { A0_PIN, ADDR_WIDTH       },
+      { D0_PIN, DATA_WIDTH       },
+      { OE_PIN, 1                },
+      { CE_PIN, 1, GPIO_IN, true },
+      {},
+    };
 
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, A0_PIN, ADDR_WIDTH, false);
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, OE_PIN, 2, false);
-  pio_sm_set_consecutive_pindirs(pio0, SM_WAITSEL, D0_PIN, DATA_WIDTH, false);
+    sm_setup_t waitsel_setup = {
+      .program            = &wait_sel_program,
+      .get_default_config = wait_sel_program_get_default_config,
+      .pins               = waitsel_pins,
+      .in_instr_base      = 0,
+      .out_instr_base     = -1,
+      .push_threshold     = PIN_COUNT,
+      .sideset_base       = -1,
+      .jmp_pin            = -1,
+    };
 
-  pio_sm_init(pio0, SM_WAITSEL, offset, &conf);
-  pio_sm_set_enabled(pio0, SM_WAITSEL, true);
-  state_machine[SM_WAITSEL].pio = pio0;
-  state_machine[SM_WAITSEL].sm = SM_WAITSEL;
+    setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
+  }
+
+  // Setup state machine that handles CPU read by putting byte on bus
+  {
+    pin_range_t read_pins[] = {
+      { D0_PIN, DATA_WIDTH       },
+      { DIR_PIN, 1, GPIO_OUT     },
+      { CE_PIN, 1, GPIO_IN, true },
+      {},
+    };
+
+    sm_setup_t read_setup = {
+      .program            = &read_program,
+      .get_default_config = read_program_get_default_config,
+      .pins               = read_pins,
+      .in_instr_base      = -1,
+      .out_instr_base     = D0_PIN,
+      .out_count          = DATA_WIDTH,
+      .sideset_base       = DIR_PIN,
+      .sideset_count      = 1,
+      .sideset_opt        = true,
+      .jmp_pin            = CE_PIN,
+    };
+
+    setup_state_machine(&state_machine[PSM_READ], &read_setup);
+  }
 
 #if USE_IRQ
   pio_set_irq0_source_enabled(pio0, pis_interrupt0, true);
   irq_set_exclusive_handler(PIO0_IRQ_0, pio_irq_handler);
   irq_set_enabled(PIO0_IRQ_0, true);
 #endif
-
-  // Setup state machine that handles CPU read by putting byte on bus
-  offset = pio_add_program(pio0, &read_program);
-  conf = read_program_get_default_config(offset);
-
-  sm_config_set_out_pins(&conf, D0_PIN, DATA_WIDTH);
-  pio_sm_set_consecutive_pindirs(pio0, SM_READ, DIR_PIN, 1, true);
-  pio_sm_set_consecutive_pindirs(pio0, SM_READ, D0_PIN, DATA_WIDTH, false);
-  sm_config_set_sideset_pins(&conf, DIR_PIN);
-  sm_config_set_sideset(&conf, 2, true, false);  // 1-bit, optional = true, pindirs = false
-
-  // Set JMP pin base to CE (or OE depending on your design)
-  sm_config_set_jmp_pin(&conf, CE_PIN);     // e.g. GPIO20
-
-  pio_sm_init(pio0, SM_READ, offset, &conf);
-  pio_sm_set_enabled(pio0, SM_READ, true);
-  state_machine[SM_READ].pio = pio0;
-  state_machine[SM_READ].sm = SM_READ;
 
   return;
 }
@@ -141,9 +152,14 @@ void __time_critical_func(romulan)(void)
   setup_pio_irq_logic();
 
   while (true) {
-    bus.combined = pio_get_fifo(SM_WAITSEL);
+    bus.combined = pio_get_fifo(PSM_WAITSEL);
     if (bus.addr == last_addr)
       continue;
+
+#if 0
+    printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d CLK:%d COMBINED:0x%08x\r\n",
+           bus.addr, bus.data, 0, bus.scs, bus.rw, 0, bus.combined);
+#endif
 
     if (!ramrom_ptr && rom_ptr != ROM)
       rom_ptr == ROM;
@@ -160,10 +176,10 @@ void __time_critical_func(romulan)(void)
     if (IO_BASE <= bus.addr && bus.addr < IO_BASE + 4) {
       switch (bus.addr & 0x3) {
       case IO_GETC: // Read byte
-        pio_put_fifo(SM_READ, sio_hw->fifo_rd);
+        pio_put_fifo(PSM_READ, sio_hw->fifo_rd);
         break;
       case IO_STATUS: // Read status reg
-        pio_put_fifo(SM_READ, sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00);
+        pio_put_fifo(PSM_READ, sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? IO_FLAG_AVAIL : 0x00);
         break;
       case IO_PUTC: // Write byte
         sio_hw->fifo_wr = bus.combined;
@@ -175,7 +191,7 @@ void __time_critical_func(romulan)(void)
     else if (MSX_PAGE_SIZE <= bus.addr && bus.addr < MSX_PAGE_SIZE * 3) {
       rom_offset = bus.addr - MSX_PAGE_SIZE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
-      pio_put_fifo(SM_READ, rom_ptr[rom_offset]);
+      pio_put_fifo(PSM_READ, rom_ptr[rom_offset]);
     }
 
     last_addr = bus.addr;

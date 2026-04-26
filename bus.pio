@@ -5,13 +5,7 @@ idle:
 	wait 1 gpio CE_PIN [WAIT_CYCLES]	; wait for CE, allow cycle to settle
 
 	mov y, pins		; read in all pins
-	;; mov osr, y		; copy to osr to do logical shift
-	;; out null, CE_PIN	; dump lower bits
-	;; out x, 2		; grab the two /OE /CE bits we want
-	;; jmp x-- idle		; if X is not zero then /OE or /CE are high
-
 	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
-	//irq IRQ_SEL		; signal we are active
 
 .wrap_target
 	mov x, pins		; read all pins again
