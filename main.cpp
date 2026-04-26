@@ -33,6 +33,9 @@
 
 #define RING_SIZE 1024
 
+#define pio_get_fifo(n) pio0->rxf[n]
+#define pio_put_fifo(n, d) pio0->txf[n] = d
+
 #define POW2_CEIL(x_) ({      \
     unsigned int x = x_; \
     x -= 1;              \
@@ -132,7 +135,7 @@ void __time_critical_func(romulan)(void)
     while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
       tight_loop_contents();
 
-    bus.combined = pio0->rxf[SM_WAITSEL];
+    bus.combined = pio_get_fifo(SM_WAITSEL);
     if (bus.addr == last_addr)
       continue;
 
@@ -151,10 +154,10 @@ void __time_critical_func(romulan)(void)
     if (IO_BASE <= bus.addr && bus.addr < IO_BASE + 4) {
       switch (bus.addr & 0x3) {
       case IO_GETC: // Read byte
-        pio0->txf[SM_READ] = sio_hw->fifo_rd;
+        pio_put_fifo(SM_READ, sio_hw->fifo_rd);
         break;
       case IO_STATUS: // Read status reg
-        pio0->txf[SM_READ] = sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00;
+        pio_put_fifo(SM_READ, sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? 0x80 : 0x00);
         break;
       case IO_PUTC: // Write byte
         sio_hw->fifo_wr = bus.combined;
@@ -166,7 +169,7 @@ void __time_critical_func(romulan)(void)
     else if (MSX_PAGE_SIZE <= bus.addr && bus.addr < MSX_PAGE_SIZE * 3) {
       rom_offset = bus.addr - MSX_PAGE_SIZE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
-      pio0->txf[SM_READ] = rom_ptr[rom_offset];
+      pio_put_fifo(SM_READ, rom_ptr[rom_offset]);
     }
 
     last_addr = bus.addr;
