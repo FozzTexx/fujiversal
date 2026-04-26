@@ -12,6 +12,30 @@ idle:
 	jmp x!=y idle		; if any have changed, restart and check /OE and /CE again
 .wrap
 
+% c-sdk {
+static const pin_range_t waitsel_pins[] = {
+  { A0_PIN, ADDR_WIDTH       },
+  { D0_PIN, DATA_WIDTH       },
+  { OE_PIN, 1                },
+  { CE_PIN, 1, GPIO_IN, true },
+  {},
+};
+
+void waitsel_init_setup(sm_setup_t *setup)
+{
+  setup->program            = &wait_sel_program;
+  setup->get_default_config = wait_sel_program_get_default_config;
+  setup->pins               = waitsel_pins;
+  setup->in_instr_base      = 0;
+  setup->out_instr_base     = -1;
+  setup->push_threshold     = PIN_COUNT;
+  setup->sideset_base       = -1;
+  setup->jmp_pin            = -1;
+
+  return;
+}
+%}
+
 .program read
 .side_set 1 opt
 
@@ -33,3 +57,29 @@ have_byte:
 	mov osr, ~null			; put a whole bunch of 1s in OSR
 	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
 .wrap
+
+% c-sdk {
+// Init the data pins as input so they start in Hi-Z state
+static const pin_range_t read_pins[] = {
+  { D0_PIN, DATA_WIDTH       },
+  { DIR_PIN, 1, GPIO_OUT     },
+  { CE_PIN, 1, GPIO_IN, true },
+  {},
+};
+
+void read_init_setup(sm_setup_t *setup)
+{
+  setup->program            = &read_program;
+  setup->get_default_config = read_program_get_default_config;
+  setup->pins               = read_pins;
+  setup->in_instr_base      = -1;
+  setup->out_instr_base     = D0_PIN;
+  setup->out_count          = DATA_WIDTH;
+  setup->sideset_base       = DIR_PIN;
+  setup->sideset_count      = 1;
+  setup->sideset_opt        = true;
+  setup->jmp_pin            = CE_PIN;
+
+  return;
+}
+%}

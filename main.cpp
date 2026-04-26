@@ -85,50 +85,15 @@ void setup_pio_irq_logic()
 
   // Setup state machine that checks when we are selected
   {
-    pin_range_t waitsel_pins[] = {
-      { A0_PIN, ADDR_WIDTH       },
-      { D0_PIN, DATA_WIDTH       },
-      { OE_PIN, 1                },
-      { CE_PIN, 1, GPIO_IN, true },
-      {},
-    };
-
-    sm_setup_t waitsel_setup = {
-      .program            = &wait_sel_program,
-      .get_default_config = wait_sel_program_get_default_config,
-      .pins               = waitsel_pins,
-      .in_instr_base      = 0,
-      .out_instr_base     = -1,
-      .push_threshold     = PIN_COUNT,
-      .sideset_base       = -1,
-      .jmp_pin            = -1,
-    };
-
+    sm_setup_t waitsel_setup {};
+    waitsel_init_setup(&waitsel_setup);
     setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
   }
 
   // Setup state machine that handles CPU read by putting byte on bus
   {
-    pin_range_t read_pins[] = {
-      { D0_PIN, DATA_WIDTH       },
-      { DIR_PIN, 1, GPIO_OUT     },
-      { CE_PIN, 1, GPIO_IN, true },
-      {},
-    };
-
-    sm_setup_t read_setup = {
-      .program            = &read_program,
-      .get_default_config = read_program_get_default_config,
-      .pins               = read_pins,
-      .in_instr_base      = -1,
-      .out_instr_base     = D0_PIN,
-      .out_count          = DATA_WIDTH,
-      .sideset_base       = DIR_PIN,
-      .sideset_count      = 1,
-      .sideset_opt        = true,
-      .jmp_pin            = CE_PIN,
-    };
-
+    sm_setup_t read_setup {};
+    read_init_setup(&read_setup);
     setup_state_machine(&state_machine[PSM_READ], &read_setup);
   }
 
