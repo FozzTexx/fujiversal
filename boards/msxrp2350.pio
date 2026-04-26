@@ -1,5 +1,3 @@
-;; this file will get prepended to bus.pio
-
 .define public CE_PIN		3
 .define public A0_PIN		4
 .define public D0_PIN		22
@@ -25,4 +23,88 @@ typedef union {
   } __attribute__((packed));
   uint32_t combined;
 } __attribute__((packed)) BusSignals;
+%}
+
+.program wait_sel
+idle:
+	wait 1 gpio CE_PIN [WAIT_CYCLES]	; wait for CE, allow cycle to settle
+
+	mov y, pins		; read in all pins
+	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
+
+.wrap_target
+	mov x, pins		; read all pins again
+	jmp x!=y idle		; if any have changed, restart and check /OE and /CE again
+.wrap
+
+% c-sdk {
+static const pin_range_t waitsel_pins[] = {
+  { A0_PIN, ADDR_WIDTH       },
+  { D0_PIN, DATA_WIDTH       },
+  { OE_PIN, 1                },
+  { CE_PIN, 1, GPIO_IN, true },
+  {},
+};
+
+void waitsel_init_setup(sm_setup_t *setup)
+{
+  setup->program            = &wait_sel_program;
+  setup->get_default_config = wait_sel_program_get_default_config;
+  setup->pins               = waitsel_pins;
+  setup->in_instr_base      = 0;
+  setup->out_instr_base     = -1;
+  setup->push_threshold     = PIN_COUNT;
+  setup->sideset_base       = -1;
+  setup->jmp_pin            = -1;
+
+  return;
+}
+%}
+
+.program read
+.side_set 1 opt
+
+	mov x, ~null side 1		; set X to all 1s, set DIR_PIN to high
+.wrap_target
+check_fifo:
+	pull noblock			; if no byte in FIFO then X is copied to OSR
+	mov y, osr			; copy Y to OSR so we can compare
+	jmp x!=y have_byte		; if X and Y are not the same then put byte on bus
+
+	jmp pin check_fifo		; if CE is still enabled check FIFO again
+
+	mov osr, null			; load up 0s
+	out pindirs, DATA_WIDTH side 1	; change D0-D7 back to inputs
+	jmp check_fifo			; Go see if there's more data
+
+have_byte:
+	out pins, DATA_WIDTH		; write byte to GPIO D0-D7
+	mov osr, ~null			; put a whole bunch of 1s in OSR
+	out pindirs, DATA_WIDTH side 0	; change D0-D7 to outputs
+.wrap
+
+% c-sdk {
+// Init the data pins as input so they start in Hi-Z state
+static const pin_range_t read_pins[] = {
+  { D0_PIN, DATA_WIDTH       },
+  { DIR_PIN, 1, GPIO_OUT     },
+  { CE_PIN, 1, GPIO_IN, true },
+  {},
+};
+
+void read_init_setup(sm_setup_t *setup)
+{
+  setup->program            = &read_program;
+  setup->get_default_config = read_program_get_default_config;
+  setup->pins               = read_pins;
+  setup->in_instr_base      = -1;
+  setup->out_instr_base     = D0_PIN;
+  setup->out_count          = DATA_WIDTH;
+  setup->sideset_base       = DIR_PIN;
+  setup->sideset_count      = 1;
+  setup->sideset_opt        = true;
+  setup->jmp_pin            = CE_PIN;
+
+  return;
+}
 %}

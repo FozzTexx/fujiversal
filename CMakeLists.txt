@@ -30,24 +30,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/b
 target_compile_definitions(${PROJECT_NAME} PRIVATE BOARD_${BOARD})
 target_compile_definitions(${PROJECT_NAME} PRIVATE BOARD_NAME=${BOARD})
 
-# Concatenate board-specific .pio with bus.pio
-set(BOARD_PIO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}.pio")
-set(BUS_PIO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/bus.pio")
-set(GENERATED_PIO_FILE "${CMAKE_CURRENT_BINARY_DIR}/${BOARD}.pio")
-
-add_custom_command(
-    OUTPUT ${GENERATED_PIO_FILE}
-    COMMAND ${CMAKE_COMMAND} -E cat ${BOARD_PIO_FILE} ${BUS_PIO_FILE} > ${GENERATED_PIO_FILE}
-    DEPENDS ${BOARD_PIO_FILE} ${BUS_PIO_FILE}
-    COMMENT "Generating ${BOARD}.pio"
-)
-
-add_custom_target(generate_pio DEPENDS ${GENERATED_PIO_FILE})
-add_dependencies(${PROJECT_NAME} generate_pio)
-
-# Generate PIO header from concatenated file
 pico_generate_pio_header(${PROJECT_NAME}
-    ${GENERATED_PIO_FILE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}.pio
 )
 
 target_link_libraries(${PROJECT_NAME}
