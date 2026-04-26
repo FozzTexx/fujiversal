@@ -1,0 +1,157 @@
+.define public DATA_WIDTH	8
+.define public ADDR_WIDTH	16
+.define public PIN_COUNT	32
+
+.define public A0_PIN		0	; A0..A15 are consecutive
+.define public D0_PIN		20	; D0..D7 are consecutive
+.define public RW_PIN		29	; 6809 R/W signal
+
+// .define public CTS_PIN		16	; Cartridge ROM select
+// .define public SCS_PIN		17	; Cartridge IO select
+// .define public CLOCK_PIN	18	; 6809 clock E signal
+
+.define public SCS_PIN		30	; Cartridge IO select
+.define public CTS_PIN		32	; Cartridge ROM select
+.define public CLOCK_PIN	33	; 6809 clock E signal
+
+.define public RESET_PIN	35	; RESET
+
+.define public IO_BASE		0xFF41
+.define public IO_GETC		1
+.define public IO_STATUS	0
+.define public IO_PUTC		3
+.define public IO_CONTROL	2
+
+.define public IO_FLAG_AVAIL	0x02
+
+.define public BUS_ROM_BASE	0xC000
+.define public BUS_ROM_TOP	0xFF00
+
+.define public IRQ_SEL 0
+
+.program decode_addrdata
+% c-sdk {
+typedef union {
+  struct {
+    uint32_t addr:ADDR_WIDTH;
+    uint32_t resv:4;
+    uint32_t data:DATA_WIDTH;
+    uint32_t resv2:1;
+    uint32_t rw:1;
+    uint32_t scs:1;
+  } __attribute__((packed));
+  uint32_t combined;
+} __attribute__((packed)) BusSignals;
+%}
+
+.program wait_sel
+.define NUM_PINS CTS_PIN - SCS_PIN + 1
+idle:
+	mov osr, ~pins		; read in all pins inverted
+
+	out x, NUM_PINS		; grab the two /CTS /SCS bits we want
+	jmp !x idle		; if X is zero then /CTS and /SCS are high
+
+	jmp pin send		; If R/W is high no need to wait
+	wait 1 gpio CLOCK_PIN	; wait for CLOCK
+
+send:
+	irq IRQ_SEL		; Signal that we're selected
+	wait 0 gpio CLOCK_PIN	; wait for end of this bus cycle
+
+.wrap_target
+	; Check if CTS/SCS still asserted into next cycle
+	wait 1 gpio CLOCK_PIN	; wait for start of next cycle
+	mov osr, ~pins		; read in all pins
+	out y, NUM_PINS		; grab the two /CTS /SCS bits we want
+	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
+	wait 0 gpio CLOCK_PIN	; wait for end of this cycle
+.wrap
+
+% c-sdk {
+static const pin_range_t waitsel_pins[] = {
+  { CTS_PIN, 1, GPIO_IN	  },
+  { 31, 1, GPIO_IN, true  }, // unused middle pin needs to be inverted to avoid false zero
+  { SCS_PIN, 1, GPIO_IN	  },
+  { RW_PIN, 1, GPIO_IN	  },
+  { CLOCK_PIN, 1, GPIO_IN },
+  {},
+};
+
+void waitsel_init_setup(sm_setup_t *setup)
+{
+  setup->program	    = &wait_sel_program;
+  setup->get_default_config = wait_sel_program_get_default_config;
+  setup->pins		    = waitsel_pins;
+  setup->in_instr_base	    = SCS_PIN;
+  setup->out_instr_base	    = -1;
+  setup->sideset_base	    = -1;
+  setup->jmp_pin	    = RW_PIN;
+
+  return;
+}
+%}
+
+.program send_bus
+.wrap_target
+	wait 1 irq next IRQ_SEL ; IRQ sent when we are selected
+	mov y, pins		; read in all pins
+	in y, PIN_COUNT		; autopush address and data bits to RX FIFO
+.wrap
+
+% c-sdk {
+static const pin_range_t send_bus_pins[] = {
+  {0, 32, GPIO_IN }, // Grab all the pins
+  {},
+};
+
+void send_bus_init_setup(sm_setup_t *setup)
+{
+  setup->program	    = &send_bus_program;
+  setup->get_default_config = send_bus_program_get_default_config;
+  setup->pins		    = send_bus_pins;
+  setup->in_instr_base	    = 0;
+  setup->out_instr_base	    = -1;
+  setup->push_threshold	    = 32;
+  setup->sideset_base	    = -1;
+  setup->jmp_pin	    = -1;
+};
+%}
+
+.program read
+.side_set 1 opt
+
+       mov x, ~null side 1	       ; set X to all 1s, set DIR_PIN to high
+.wrap_target
+check_fifo:
+	pull block                     ; get byte to write
+	out pins, DATA_WIDTH           ; write byte to GPIO D0-D7
+	mov osr, ~null                 ; put a whole bunch of 1s in OSR
+	out pindirs, DATA_WIDTH side 0 ; change D0-D7 to outputs
+	wait 1 gpio CLOCK_PIN          ; wait for start of cycle
+	wait 0 gpio CLOCK_PIN          ; wait for end of cycle
+	mov osr, null                  ; load up 0s
+	out pindirs, DATA_WIDTH side 1 ; change D0-D7 back to inputs
+.wrap
+
+% c-sdk {
+// Init the data pins as input so they start in Hi-Z state
+static const pin_range_t read_pins[] = {
+  { D0_PIN, DATA_WIDTH, GPIO_IN },
+  {},
+};
+
+void read_init_setup(sm_setup_t *setup)
+{
+  setup->program	    = &read_program;
+  setup->get_default_config = read_program_get_default_config;
+  setup->pins		    = read_pins;
+  setup->in_instr_base	    = -1;
+  setup->out_instr_base	    = D0_PIN;
+  setup->out_count	    = DATA_WIDTH;
+  setup->sideset_base       = 31;
+  setup->sideset_count      = 1;
+  setup->sideset_opt        = true;
+  setup->jmp_pin	    = -1;
+};
+%}

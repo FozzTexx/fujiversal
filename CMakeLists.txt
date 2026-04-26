@@ -6,8 +6,10 @@ if(NOT DEFINED BOARD)
 endif()
 
 # Set board type for RP2350-based boards BEFORE importing SDK
-if(BOARD STREQUAL "msxrp2350")
-    set(PICO_BOARD "pico2" CACHE STRING "Pico board type" FORCE)
+if(BOARD STREQUAL "msxrp2350"
+   OR BOARD STREQUAL "msx_proto_260402"
+   OR BOARD STREQUAL "coco_proto_260402")
+    set(PICO_BOARD "pimoroni_pga2350" CACHE STRING "Pico board type" FORCE)
     set(PICO_PLATFORM "rp2350-arm-s" CACHE STRING "Pico platform" FORCE)
     set(PICO_CHIP "rp2350" CACHE STRING "Pico chip" FORCE)
 endif()
@@ -29,6 +31,12 @@ add_executable(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/boards)
 target_compile_definitions(${PROJECT_NAME} PRIVATE BOARD_${BOARD})
 target_compile_definitions(${PROJECT_NAME} PRIVATE BOARD_NAME=${BOARD})
+
+if(BOARD STREQUAL "msxrp2350"
+   OR BOARD STREQUAL "msx_proto_260402"
+   OR BOARD STREQUAL "coco_proto_260402")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PICO_PIO_USE_GPIO_BASE=1)
+endif()
 
 pico_generate_pio_header(${PROJECT_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}.pio

@@ -1,0 +1,154 @@
+.pio_version 1
+
+;; this file will get prepended to bus.pio
+
+.define public DATA_WIDTH	8
+.define public ADDR_WIDTH	16
+
+.define public A0_PIN		0	; A0..A15 are consecutive
+.define public D0_PIN		20	; D0..D7 are consecutive
+.define public RD_PIN		28	; /RD
+.define public WR_PIN		29	; /WR
+.define public IORQ_PIN		30	; /IORQ
+.define public MEMRQ_PIN	31	; /MEMRQ
+.define public SLTSL_PIN	32	; /SLTSL
+.define public CLOCK_PIN	33	; CLOCK
+.define public RESET_PIN	35	; RESET
+
+.define public IO_BASE		0xBFFC
+.define public IO_GETC		0
+.define public IO_STATUS	1
+.define public IO_PUTC		2
+.define public IO_CONTROL	3
+
+.define public IO_FLAG_AVAIL	0x80
+
+.define public BUS_ROM_BASE	0x4000
+.define public BUS_ROM_TOP  	BUS_ROM_BASE * 3
+
+.define public PIN_COUNT 32
+.define public WAIT_CYCLES 15
+
+.define public IRQ_SEL 0
+
+.program decode_addrdata
+% c-sdk {
+typedef union {
+  struct {
+    uint32_t addr:ADDR_WIDTH;
+    uint32_t resv:4;
+    uint32_t data:DATA_WIDTH;
+    uint32_t rd:1;
+    uint32_t wr:1;
+    uint32_t iorq:1;
+    uint32_t memrq:1;
+  } __attribute__((packed));
+  uint32_t combined;
+} __attribute__((packed)) BusSignals;
+%}
+
+.program wait_sel
+.wrap_target
+        wait 1 gpio SLTSL_PIN [WAIT_CYCLES]   ; wait for SLTSL to enable
+        irq 0
+        wait 0 gpio SLTSL_PIN   ; wait for SLTSL to disable
+.wrap
+
+% c-sdk {
+static const pin_range_t waitsel_pins[] = {
+  { SLTSL_PIN, 1, GPIO_IN, true },
+  {},
+};
+
+void waitsel_init_setup(sm_setup_t *setup)
+{
+  setup->program	    = &wait_sel_program;
+  setup->get_default_config = wait_sel_program_get_default_config;
+  setup->pins		    = waitsel_pins;
+  setup->in_instr_base	    = -1;
+  setup->out_instr_base	    = -1;
+  setup->sideset_base	    = -1;
+  setup->jmp_pin	    = -1;
+
+  return;
+}
+%}
+
+.program send_bus
+idle:
+        wait 1 irq next 0               ; IRQ sent when we are selected
+
+        mov y, pins             ; read in all pins
+        in y, PIN_COUNT         ; autopush address and data bits to RX FIFO
+
+.wrap_target
+        mov x, pins             ; read all pins again
+        jmp x!=y idle           ; if any have changed, restart and check /OE and /SLTSL again
+.wrap
+
+% c-sdk {
+static const pin_range_t send_bus_pins[] = {
+  { A0_PIN, ADDR_WIDTH },
+  { RD_PIN, 1          },
+  { WR_PIN, 1          },
+  { IORQ_PIN, 1        },
+  { MEMRQ_PIN, 1       },
+  { D0_PIN, DATA_WIDTH },
+  {},
+};
+
+void send_bus_init_setup(sm_setup_t *setup)
+{
+  setup->program	    = &send_bus_program;
+  setup->get_default_config = send_bus_program_get_default_config;
+  setup->pins		    = send_bus_pins;
+  setup->in_instr_base	    = 0;
+  setup->out_instr_base	    = -1;
+  setup->push_threshold	    = 32;
+  setup->sideset_base	    = -1;
+  setup->jmp_pin	    = -1;
+};
+%}
+
+.program read
+        mov x, ~null            ; set X to all 1s, set DIR_PIN to high
+.wrap_target
+check_fifo:
+        pull noblock            ; if no byte in FIFO then X is copied to OSR
+        mov y, osr              ; copy Y to OSR so we can compare
+        jmp x!=y have_byte      ; if X and Y are not the same then put byte on bus
+
+        jmp pin check_fifo      ; if SLTSL is still enabled check FIFO again
+
+        mov osr, null           ; load up 0s
+        out pindirs, DATA_WIDTH ; change D0-D7 back to inputs
+        jmp check_fifo          ; Go see if there's more data
+
+have_byte:
+        out pins, DATA_WIDTH    ; write byte to GPIO D0-D7
+        mov osr, ~null          ; put a whole bunch of 1s in OSR
+        out pindirs, DATA_WIDTH ; change D0-D7 to outputs
+.wrap
+
+% c-sdk {
+// Init the data pins as input so they start in Hi-Z state
+static const pin_range_t read_pins[] = {
+  { D0_PIN, DATA_WIDTH, GPIO_IN },
+  { SLTSL_PIN, 1, GPIO_IN, true },
+  {},
+};
+
+void read_init_setup(sm_setup_t *setup)
+{
+  setup->program	    = &read_program;
+  setup->get_default_config = read_program_get_default_config;
+  setup->pins		    = read_pins;
+  setup->in_instr_base	    = -1;
+  setup->out_instr_base	    = D0_PIN;
+  setup->out_count	    = DATA_WIDTH;
+  setup->sideset_base       = 31;
+  setup->sideset_count      = 1;
+  setup->sideset_opt        = true;
+  setup->jmp_pin	    = SLTSL_PIN;
+};
+%}

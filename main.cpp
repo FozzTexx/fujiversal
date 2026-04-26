@@ -30,8 +30,11 @@
 
 #define PSM_WAITSEL 0
 #define PSM_READ    1
+#if !defined(BOARD_picorom_coco)
+#define PSM_SENDBUS 2
+#endif
 
-pio_sm_t state_machine[2];
+pio_sm_t state_machine[3];
 #define pio_get_fifo(n) pio_sm_get_blocking(state_machine[n].pio, state_machine[n].sm)
 #define pio_put_fifo(n, d) pio_sm_put(state_machine[n].pio, state_machine[n].sm, d)
 
@@ -87,6 +90,15 @@ void setup_pio_irq_logic()
     setup_state_machine(&state_machine[PSM_WAITSEL], &waitsel_setup);
   }
 
+#ifdef PSM_SENDBUS
+  // Setup state machine that sends addr/data bus signals
+  {
+    sm_setup_t send_bus_setup {};
+    send_bus_init_setup(&send_bus_setup);
+    setup_state_machine(&state_machine[PSM_SENDBUS], &send_bus_setup);
+  }
+#endif // PSM_SENDBUS
+
   // Setup state machine that handles CPU read by putting byte on bus
   {
     sm_setup_t read_setup {};
@@ -114,8 +126,12 @@ void __time_critical_func(romulan)(void)
   setup_pio_irq_logic();
 
   while (true) {
+#ifdef PSM_SENDBUS
+    bus.combined = pio_get_fifo(PSM_SENDBUS);
+#else
     bus.combined = pio_get_fifo(PSM_WAITSEL);
-#if !defined(BOARD_picorom_coco)
+#endif // PSM_SENDBUS
+#if !defined(BOARD_picorom_coco) && !defined(BOARD_coco_proto_260402)
     if (bus.addr == last_addr)
       continue;
 #endif

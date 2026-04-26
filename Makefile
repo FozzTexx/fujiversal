@@ -1,6 +1,6 @@
 BOARD ?= picorom_msx
 
-ifeq ($(BOARD),picorom_coco)
+ifneq ($(filter $(BOARD),picorom_coco coco_proto_260402),)
   ROM_IMAGE = hdbdw3bc3.rom
 else
   ROM_IMAGE = $(MSX_DIR)/r2r/msxrom/disk.rom
@@ -28,7 +28,7 @@ $(BUILD_MAKE): CMakeLists.txt boards/$(BOARD).pio
 upload: $(BUILD_DIR)/$(FIRMWARE)
 	defoogi sudo picotool load -v -x $(UF2_BINARY) -f
 
-picorom_msx picorom_coco msxrp2350:
+picorom_msx picorom_coco msxrp2350 msx_proto_260402 coco_proto_260402:
 	$(MAKE) BOARD=$@
 
 all: $(BOARD)
