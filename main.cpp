@@ -33,8 +33,8 @@
 
 #define RING_SIZE 1024
 
-#define pio_get_fifo(n) pio0->rxf[n]
-#define pio_put_fifo(n, d) pio0->txf[n] = d
+#define pio_get_fifo(n) pio_sm_get_blocking(pio0, n)
+#define pio_put_fifo(n, d) pio_sm_put(pio0, n, d)
 
 #define POW2_CEIL(x_) ({      \
     unsigned int x = x_; \
@@ -132,9 +132,6 @@ void __time_critical_func(romulan)(void)
   setup_pio_irq_logic();
 
   while (true) {
-    while (pio0->fstat & (1u << (PIO_FSTAT_RXEMPTY_LSB + SM_WAITSEL)))
-      tight_loop_contents();
-
     bus.combined = pio_get_fifo(SM_WAITSEL);
     if (bus.addr == last_addr)
       continue;
