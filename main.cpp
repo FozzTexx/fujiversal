@@ -4,7 +4,12 @@
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
 
+#ifdef USE_STDIO
 #include <stdio.h>
+#else
+#pragma GCC poison printf putchar getchar
+#endif // USE_STDIO
+
 #include <string.h>
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
@@ -12,6 +17,7 @@
 #include <hardware/irq.h>
 #include <hardware/watchdog.h>
 #include <hardware/clocks.h>
+#include <tusb.h>
 
 #include <string>
 
@@ -48,7 +54,7 @@ pio_sm_t state_machine[3];
     x = x | (x >>16);    \
     x + 1; })
 
-#define RING_SIZE 1024
+#define RING_SIZE 256
 #define ring_append(x) ({ring_buffer[ring_in] = x; \
       ring_in = (ring_in + 1) % sizeof(ring_buffer); })
 
@@ -191,11 +197,15 @@ void sendReplyPacket(fujiDeviceID_t source, bool ack, void *data, size_t length)
     FujiBusPacket packet(source, ack ? FUJICMD_ACK : FUJICMD_NAK,
                          ack ? std::string(static_cast<const char*>(data), length) : "");
     ByteBuffer encoded = packet.serialize();
+#ifdef USE_STDIO
     printf("Sending reply: dev:%02x cmd:%02x len:%04x\n",
            packet.device(), packet.command(), encoded.size());
+#endif // USE_STDIO
     fwrite(encoded.data(), 1, encoded.size(), stdout);
     fflush(stdout);
+#ifdef USE_STDIO
     printf("Sent\n");
+#endif // USE_STDIO
     return;
 }
 
@@ -214,7 +224,9 @@ bool process_command(ByteBuffer &buffer)
     {
       size_t offset = packet->param(0) * ROM_SEG_SIZE;
       offset %= sizeof(ramrom);
+#ifdef USE_STDIO
       printf("Opening RAM at 0x%04x\n", offset);
+#endif // USE_STDIO
       ramrom_ptr = &ramrom[offset];
       ramrom_pos = 0;
       ramrom_needs_activate = false;
@@ -228,7 +240,9 @@ bool process_command(ByteBuffer &buffer)
         sendReplyPacket(packet->device(), false, nullptr, 0);
 
       size_t len = std::min(packet->data()->size(), sizeof(ramrom) - ramrom_pos);
+#ifdef USE_STDIO
       printf("Writing %d bytes to 0x%04x\n", len, ramrom_pos);
+#endif // USE_STDIO
       if (len) {
         memcpy(&ramrom_ptr[ramrom_pos], packet->data()->data(), len);
         ramrom_pos += len;
@@ -244,7 +258,9 @@ bool process_command(ByteBuffer &buffer)
 
     ramrom_pos = -1;
     ramrom_needs_activate = true;
+#ifdef USE_STDIO
     printf("Closing RAM %d\n", ramrom_needs_activate);
+#endif // USE_STDIO
     sendReplyPacket(packet->device(), true, nullptr, 0);
     break;
 
@@ -277,11 +293,25 @@ int main()
   set_sys_clock_khz(250000, true);
 
   multicore_launch_core1(romulan);
+
+#ifdef USE_STDIO
   stdio_init_all();
   stdio_set_translate_crlf(&stdio_usb, false);
 
   while (!stdio_usb_connected())
     ;
+#else
+  tusb_init();
+  while (!tud_cdc_connected()) {
+    tud_task();
+    sleep_ms(10);
+  }
+#endif // USE_STDIO
+
+#ifdef LED_PIN
+  gpio_init(LED_PIN);
+  gpio_set_dir(LED_PIN, GPIO_OUT);
+#endif // LED_PIN
 
 #if 0
   if (watchdog_caused_reboot())
@@ -298,7 +328,14 @@ int main()
 #if 0
       printf("Received $%04x:$%02x\r\n", bus.addr, bus.data);
 #else
+#ifdef USE_STDIO
       putchar(bus.data);
+#else
+      while (tud_cdc_write_available() < 1)
+        tud_task();
+      tud_cdc_write_char(bus.data);
+      tud_cdc_write_flush();
+#endif // USE_STDIO
 #endif
     }
 
@@ -313,35 +350,46 @@ int main()
       }
     }
 
-    input = getchar_timeout_us(0);
-    if (input != PICO_ERROR_TIMEOUT) {
-      if (!command_buf.size() && input != SLIP_END)
-        ring_append(input);
-      else {
-        // if SLIP_END or already capturing then push to command_buf
-        last_cc_seen = to_ms_since_boot(get_absolute_time());
+    tud_task();
+    if ((ring_in + 1) % RING_SIZE != ring_out) {
+      gpio_put(LED_PIN, 0);
+      input = tud_cdc_available();
+      if (input > 0) {
+        unsigned char rc;
+        tud_cdc_read(&rc, 1);
+        input = rc;
+        if (!command_buf.size() && input != SLIP_END)
+          ring_append(input);
+        else {
+          // if SLIP_END or already capturing then push to command_buf
+          last_cc_seen = to_ms_since_boot(get_absolute_time());
 
-        // Keep track of when last command char was seen so we can timeout
-        command_buf.push_back((char) input);
+          // Keep track of when last command char was seen so we can timeout
+          command_buf.push_back((char) input);
 
-        size_t command_size = command_buf.size();
-        if (command_buf.size()) {
-          // If second char is not a command for us, send command_buf to RBS
-          if (command_size == 2 && input != FUJI_DEVICEID_DBC) {
-            //printf("Command not us\r\n");
-            for (char c : command_buf)
-              ring_append((uint8_t) c);
-            command_buf.clear();
-          }
-          else if (command_size > 1 && input == SLIP_END) {
-            if (!process_command(command_buf)) {
+          size_t command_size = command_buf.size();
+          if (command_buf.size()) {
+            // If second char is not a command for us, send command_buf to RBS
+            if (command_size == 2 && input != FUJI_DEVICEID_DBC) {
+              //printf("Command not us\r\n");
               for (char c : command_buf)
                 ring_append((uint8_t) c);
+              command_buf.clear();
             }
-            command_buf.clear();
+            else if (command_size > 1 && input == SLIP_END) {
+              if (!process_command(command_buf)) {
+                for (char c : command_buf)
+                  ring_append((uint8_t) c);
+              }
+              command_buf.clear();
+            }
           }
         }
       }
+    }
+    else {
+      //printf("RING FULL\r\n");
+      gpio_put(LED_PIN, 1);
     }
 
     if (ring_in != ring_out) {
