@@ -16,6 +16,8 @@
 
 .define public RESET_PIN	35	; RESET
 
+.define public LED_PIN		39	; LED on the Core2350B itself
+
 .define public IO_BASE		0xFF41
 .define public IO_GETC		1
 .define public IO_STATUS	0
