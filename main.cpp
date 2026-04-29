@@ -285,7 +285,7 @@ int main()
   unsigned int count = 0;
   unsigned char ring_buffer[RING_SIZE];
   unsigned ring_in = 0, ring_out = 0;
-  uint32_t last_cc_seen = 0, now;
+  uint32_t last_cc_seen = 0, last_ring_sent = 0, now;
   bool our_command = false;
   ByteBuffer command_buf;
 
@@ -322,6 +322,7 @@ int main()
 
   while (true) {
     watchdog_update();
+    now = to_ms_since_boot(get_absolute_time());
 
     if (multicore_fifo_rvalid()) {
       bus.combined = multicore_fifo_pop_blocking();
@@ -340,7 +341,6 @@ int main()
     }
 
     if (command_buf.size()) {
-      now = to_ms_since_boot(get_absolute_time());
       // Did we timeout waiting for final SLIP_END?
       if (now - last_cc_seen > 50) {
         //printf("Command timeout\r\n");
@@ -351,8 +351,10 @@ int main()
     }
 
     tud_task();
-    if ((ring_in + 1) % RING_SIZE != ring_out) {
+    if ((ring_in + 1) % RING_SIZE != ring_out || now - last_ring_sent > 10) {
+#ifdef LED_PIN
       gpio_put(LED_PIN, 0);
+#endif
       input = tud_cdc_available();
       if (input > 0) {
         unsigned char rc;
@@ -389,13 +391,17 @@ int main()
     }
     else {
       //printf("RING FULL\r\n");
+#ifdef LED_PIN
       gpio_put(LED_PIN, 1);
+#endif
     }
 
     if (ring_in != ring_out) {
       bool sent = multicore_fifo_push_timeout_us(ring_buffer[ring_out], 0);
-      if (sent)
+      if (sent) {
         ring_out = (ring_out + 1) % sizeof(ring_buffer);
+        last_ring_sent = now;
+      }
     }
   }
 
