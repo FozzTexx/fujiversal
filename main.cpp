@@ -6,6 +6,7 @@
 
 #ifdef USE_STDIO
 #include <stdio.h>
+#define DEBUG_PRINTF printf
 #else
 #pragma GCC poison printf putchar getchar
 #endif // USE_STDIO
@@ -63,6 +64,34 @@ int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
 
+#ifndef USE_STDIO
+#include <stdarg.h>
+#include <stdio.h>
+#include "tusb.h"
+
+#define DEBUG_PRINTF tusb_printf
+
+void tusb_printf(const char *format, ...)
+{
+  char buf[256];
+  va_list args;
+
+
+  va_start(args, format);
+  int len = vsnprintf(buf, sizeof(buf), format, args);
+  va_end(args);
+
+  if (len) {
+    tud_cdc_write(buf, (uint32_t)len);
+    tud_cdc_write_flush();
+    while (tud_cdc_write_available() < CFG_TUD_CDC_TX_BUFSIZE)
+      tud_task();
+  }
+
+  return;
+}
+#endif // ! USE_STDIO
+
 #if USE_IRQ
 bool selected = 0;
 
@@ -112,6 +141,11 @@ void setup_pio_irq_logic()
     setup_state_machine(&state_machine[PSM_READ], &read_setup);
   }
 
+#ifdef BOARD_coco_proto_260402
+  // FIXME - doesn't belong here
+  gpio_pull_up(IGNORE_PIN); // unused middle pin needs to be inverted to avoid false zero
+#endif
+
 #if USE_IRQ
   pio_set_irq0_source_enabled(pio0, pis_interrupt0, true);
   irq_set_exclusive_handler(PIO0_IRQ_0, pio_irq_handler);
@@ -143,8 +177,8 @@ void __time_critical_func(romulan)(void)
 #endif
 
 #if 0
-    printf("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d CLK:%d COMBINED:0x%08x\r\n",
-           bus.addr, bus.data, 0, bus.scs, bus.rw, 0, bus.combined);
+    DEBUG_PRINTF("ADDR:%04x DATA:%02x CTS:%d SCS:%d RW:%d UN:%d COMBINED:0x%08x\r\n",
+                 bus.addr, bus.data, 0, bus.scs, bus.rw, bus.unused, bus.combined);
 #endif
 
     if (!ramrom_ptr && rom_ptr != ROM)
@@ -183,7 +217,9 @@ void __time_critical_func(romulan)(void)
     else if (BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP) {
       rom_offset = bus.addr - BUS_ROM_BASE;
       //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
+      bus.data = rom_ptr[rom_offset];
       pio_put_fifo(PSM_READ, rom_ptr[rom_offset]);
+      //DEBUG_PRINTF("PEEK ADDR:%04x DATA:%02x\r\n", bus.addr, bus.data);
     }
 
     last_addr = bus.addr;

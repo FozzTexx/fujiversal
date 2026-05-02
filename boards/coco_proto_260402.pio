@@ -11,6 +11,7 @@
 // .define public CLOCK_PIN	18	; 6809 clock E signal
 
 .define public SCS_PIN		30	; Cartridge IO select
+.define public IGNORE_PIN	31	; Unused, not connected to bus
 .define public CTS_PIN		32	; Cartridge ROM select
 .define public CLOCK_PIN	33	; 6809 clock E signal
 
@@ -41,13 +42,14 @@ typedef union {
     uint32_t resv2:1;
     uint32_t rw:1;
     uint32_t scs:1;
+    uint32_t unused:1;
   } __attribute__((packed));
   uint32_t combined;
 } __attribute__((packed)) BusSignals;
 %}
 
 .program wait_sel
-.define NUM_PINS CTS_PIN - SCS_PIN + 1
+.define NUM_PINS 3 //CTS_PIN - SCS_PIN + 1
 idle:
 	mov osr, ~pins		; read in all pins inverted
 
@@ -73,7 +75,6 @@ send:
 % c-sdk {
 static const pin_range_t waitsel_pins[] = {
   { CTS_PIN, 1, GPIO_IN	  },
-  { 31, 1, GPIO_IN, true  }, // unused middle pin needs to be inverted to avoid false zero
   { SCS_PIN, 1, GPIO_IN	  },
   { RW_PIN, 1, GPIO_IN	  },
   { CLOCK_PIN, 1, GPIO_IN },
