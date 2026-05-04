@@ -112,6 +112,9 @@ int setup_state_machine(pio_sm_t *pio_sm, const sm_setup_t *cfg)
   if (cfg->push_threshold > 0)
     sm_config_set_in_shift(&conf, true, true, cfg->push_threshold);
 
+  if (cfg->set_instr_base >= 0)
+    sm_config_set_set_pins(&conf, cfg->set_instr_base, cfg->set_count);
+
   int err = pio_sm_init(pio_sm->pio, pio_sm->sm, offset, &conf);
   if (!err)
     pio_sm_set_enabled(pio_sm->pio, pio_sm->sm, true);

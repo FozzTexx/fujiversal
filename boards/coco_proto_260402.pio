@@ -49,28 +49,36 @@ typedef union {
 %}
 
 .program wait_sel
-.define NUM_PINS 3 //CTS_PIN - SCS_PIN + 1
-idle:
-	mov osr, ~pins		; read in all pins inverted
-
-	out x, NUM_PINS		; grab the two /CTS /SCS bits we want
-	jmp !x idle		; if X is zero then /CTS and /SCS are high
-
-	jmp pin send		; If R/W is high no need to wait
-	wait 1 gpio CLOCK_PIN	; wait for CLOCK
-
-send:
-	irq IRQ_SEL		; Signal that we're selected
-	wait 0 gpio CLOCK_PIN	; wait for end of this bus cycle
-
 .wrap_target
-	; Check if CTS/SCS still asserted into next cycle
-	wait 1 gpio CLOCK_PIN	; wait for start of next cycle
-	mov osr, ~pins		; read in all pins
-	out y, NUM_PINS		; grab the two /CTS /SCS bits we want
-	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
-	wait 0 gpio CLOCK_PIN	; wait for end of this cycle
+	wait 0 gpio CTS_PIN
+	set pins, 1
+	wait 1 gpio CTS_PIN
+	set pins, 0
 .wrap
+
+// .program wait_sel
+// .define NUM_PINS 3 //CTS_PIN - SCS_PIN + 1
+// idle:
+// 	mov osr, ~pins		; read in all pins inverted
+
+// 	out x, NUM_PINS		; grab the two /CTS /SCS bits we want
+// 	jmp !x idle		; if X is zero then /CTS and /SCS are high
+
+// 	jmp pin send		; If R/W is high no need to wait
+// 	wait 1 gpio CLOCK_PIN	; wait for CLOCK
+
+// send:
+// 	irq IRQ_SEL		; Signal that we're selected
+// 	wait 0 gpio CLOCK_PIN	; wait for end of this bus cycle
+
+// .wrap_target
+// 	; Check if CTS/SCS still asserted into next cycle
+// 	wait 1 gpio CLOCK_PIN	; wait for start of next cycle
+// 	mov osr, ~pins		; read in all pins
+// 	out y, NUM_PINS		; grab the two /CTS /SCS bits we want
+// 	jmp x!=y idle		; if any have changed, restart and check /CTS and /SCS again
+// 	wait 0 gpio CLOCK_PIN	; wait for end of this cycle
+// .wrap
 
 % c-sdk {
 static const pin_range_t waitsel_pins[] = {
@@ -78,6 +86,7 @@ static const pin_range_t waitsel_pins[] = {
   { SCS_PIN, 1, GPIO_IN	  },
   { RW_PIN, 1, GPIO_IN	  },
   { CLOCK_PIN, 1, GPIO_IN },
+  { LED_PIN, 1, GPIO_OUT },
   {},
 };
 
@@ -88,6 +97,8 @@ void waitsel_init_setup(sm_setup_t *setup)
   setup->pins		    = waitsel_pins;
   setup->in_instr_base	    = SCS_PIN;
   setup->out_instr_base	    = -1;
+  setup->set_instr_base     = LED_PIN;
+  setup->set_count    	    = 1;
   setup->sideset_base	    = -1;
   setup->jmp_pin	    = RW_PIN;
 
@@ -115,6 +126,7 @@ void send_bus_init_setup(sm_setup_t *setup)
   setup->pins		    = send_bus_pins;
   setup->in_instr_base	    = 0;
   setup->out_instr_base	    = -1;
+  setup->set_instr_base     = -1;
   setup->push_threshold	    = 32;
   setup->sideset_base	    = -1;
   setup->jmp_pin	    = -1;
@@ -151,6 +163,7 @@ void read_init_setup(sm_setup_t *setup)
   setup->pins		    = read_pins;
   setup->in_instr_base	    = -1;
   setup->out_instr_base	    = D0_PIN;
+  setup->set_instr_base     = -1;
   setup->out_count	    = DATA_WIDTH;
   setup->sideset_base       = 31;
   setup->sideset_count      = 1;

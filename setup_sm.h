@@ -20,9 +20,11 @@ typedef struct {
 
   const pin_range_t *pins;
 
-  int in_instr_base;   // -1 = skip
+  int in_instr_base;   // -1 = skip, for sm_config_set_in_pins
   int out_instr_base;  // -1 = skip, for sm_config_set_out_pins
   uint out_count;
+  int set_instr_base;  // -1 = skip, for sm_config_set_set_pins
+  uint set_count;
   uint push_threshold; // 0 = skip
 
   int sideset_base;    // -1 = skip
