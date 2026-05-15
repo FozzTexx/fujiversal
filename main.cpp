@@ -340,7 +340,6 @@ int main()
   tusb_init();
   while (!tud_cdc_connected()) {
     tud_task();
-    sleep_ms(10);
   }
 #endif // USE_STDIO
 
