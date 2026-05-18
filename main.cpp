@@ -37,7 +37,7 @@
 
 #define PSM_WAITSEL 0
 #define PSM_READ    1
-#if !defined(BOARD_picorom_coco)
+#if !defined(BOARD_picorom_coco) && !defined(BOARD_picorom_msx)
 #define PSM_SENDBUS 2
 #endif
 
