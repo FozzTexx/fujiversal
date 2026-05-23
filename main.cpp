@@ -37,7 +37,7 @@
 
 #define PSM_WAITSEL 0
 #define PSM_READ    1
-#if !defined(BOARD_picorom_coco)
+#if !defined(BOARD_picorom_coco) && !defined(BOARD_picorom_msx)
 #define PSM_SENDBUS 2
 #endif
 
@@ -56,13 +56,21 @@ pio_sm_t state_machine[3];
     x + 1; })
 
 #define RING_SIZE 256
-#define ring_append(x) ({ring_buffer[ring_in] = x; \
-      ring_in = (ring_in + 1) % sizeof(ring_buffer); })
+#define ring_append(buf, in, x) ({buf[in] = x; in = (in + 1) % sizeof(buf); })
+#define check_tx() ({ \
+      if (multicore_fifo_rvalid()) {                    \
+        bus.combined = multicore_fifo_pop_blocking();   \
+        ring_append(ring_tx, ring_tx_in, bus.data);     \
+      }                                                 \
+    })
+
 
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
 volatile bool ramrom_needs_activate = false;
+
+#define SERIAL_BEGIN_DELAY 100
 
 #ifndef USE_STDIO
 #include <stdarg.h>
@@ -319,14 +327,20 @@ int main()
   BusSignals bus;
   int input;
   unsigned int count = 0;
-  unsigned char ring_buffer[RING_SIZE];
-  unsigned ring_in = 0, ring_out = 0;
-  uint32_t last_cc_seen = 0, last_ring_sent = 0, now;
-  bool our_command = false;
+  unsigned char ring_rx[RING_SIZE], ring_tx[RING_SIZE];
+  unsigned ring_rx_in = 0, ring_rx_out = 0;
+  unsigned ring_tx_in = 0, ring_tx_out = 0;
+  uint32_t last_cc_seen = 0, last_ring_sent = 0, now, loop_begin;
+  bool our_command = false, serial_ready = false;
   ByteBuffer command_buf;
 
 
   set_sys_clock_khz(250000, true);
+
+#ifdef LED_PIN
+  gpio_init(LED_PIN);
+  gpio_set_dir(LED_PIN, GPIO_OUT);
+#endif // LED_PIN
 
   multicore_launch_core1(romulan);
 
@@ -340,13 +354,9 @@ int main()
   tusb_init();
   while (!tud_cdc_connected()) {
     tud_task();
+    check_tx();
   }
 #endif // USE_STDIO
-
-#ifdef LED_PIN
-  gpio_init(LED_PIN);
-  gpio_set_dir(LED_PIN, GPIO_OUT);
-#endif // LED_PIN
 
 #if 0
   if (watchdog_caused_reboot())
@@ -355,40 +365,30 @@ int main()
 
   watchdog_enable(100, 1);
 
+  loop_begin = to_ms_since_boot(get_absolute_time());
   while (true) {
     watchdog_update();
     now = to_ms_since_boot(get_absolute_time());
 
-    if (multicore_fifo_rvalid()) {
-      bus.combined = multicore_fifo_pop_blocking();
-#if 0
-      printf("Received $%04x:$%02x\r\n", bus.addr, bus.data);
-#else
-#ifdef USE_STDIO
-      putchar(bus.data);
-#else
-      while (tud_cdc_write_available() < 1)
-        tud_task();
-      tud_cdc_write_char(bus.data);
-      tud_cdc_write_flush();
-#endif // USE_STDIO
-#endif
-    }
+    if (!serial_ready && now - loop_begin > SERIAL_BEGIN_DELAY)
+      serial_ready = true;
+
+    check_tx();
 
     if (command_buf.size()) {
       // Did we timeout waiting for final SLIP_END?
       if (now - last_cc_seen > 50) {
         //printf("Command timeout\r\n");
         for (char c : command_buf)
-          ring_append((uint8_t) c);
+          ring_append(ring_rx, ring_rx_in, (uint8_t) c);
         command_buf.clear();
       }
     }
 
     tud_task();
-    if ((ring_in + 1) % RING_SIZE != ring_out || now - last_ring_sent > 10) {
+    if ((ring_rx_in + 1) % RING_SIZE != ring_rx_out || now - last_ring_sent > 10) {
 #ifdef LED_PIN
-      gpio_put(LED_PIN, 0);
+      //gpio_put(LED_PIN, 0);
 #endif
       input = tud_cdc_available();
       if (input > 0) {
@@ -396,7 +396,7 @@ int main()
         tud_cdc_read(&rc, 1);
         input = rc;
         if (!command_buf.size() && input != SLIP_END)
-          ring_append(input);
+          ring_append(ring_rx, ring_rx_in, input);
         else {
           // if SLIP_END or already capturing then push to command_buf
           last_cc_seen = to_ms_since_boot(get_absolute_time());
@@ -410,13 +410,13 @@ int main()
             if (command_size == 2 && input != FUJI_DEVICEID_DBC) {
               //printf("Command not us\r\n");
               for (char c : command_buf)
-                ring_append((uint8_t) c);
+                ring_append(ring_rx, ring_rx_in, (uint8_t) c);
               command_buf.clear();
             }
             else if (command_size > 1 && input == SLIP_END) {
               if (!process_command(command_buf)) {
                 for (char c : command_buf)
-                  ring_append((uint8_t) c);
+                  ring_append(ring_rx, ring_rx_in, (uint8_t) c);
               }
               command_buf.clear();
             }
@@ -427,16 +427,29 @@ int main()
     else {
       //printf("RING FULL\r\n");
 #ifdef LED_PIN
-      gpio_put(LED_PIN, 1);
+      //gpio_put(LED_PIN, 1);
 #endif
     }
 
-    if (ring_in != ring_out) {
-      bool sent = multicore_fifo_push_timeout_us(ring_buffer[ring_out], 0);
+    if (ring_rx_in != ring_rx_out) {
+      bool sent = multicore_fifo_push_timeout_us(ring_rx[ring_rx_out], 0);
       if (sent) {
-        ring_out = (ring_out + 1) % sizeof(ring_buffer);
+        ring_rx_out = (ring_rx_out + 1) % sizeof(ring_rx);
         last_ring_sent = now;
       }
+    }
+
+    if (serial_ready && ring_tx_in != ring_tx_out) {
+#ifdef USE_STDIO
+      putchar(ring_tx[ring_tx_out]);
+#else
+      while (tud_cdc_write_available() < 1)
+        tud_task();
+      tud_cdc_write_char(ring_tx[ring_tx_out]);
+      tud_cdc_write_flush();
+#endif // USE_STDIO
+
+      ring_tx_out = (ring_tx_out + 1) % sizeof(ring_tx);
     }
   }
 
