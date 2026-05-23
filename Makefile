@@ -3,7 +3,7 @@ BOARD ?= picorom_msx
 ifneq ($(filter $(BOARD),picorom_coco coco_proto_260402),)
   ROM_IMAGE = hdbdw3bc3.rom
 else
-  ROM_IMAGE = $(MSX_DIR)/r2r/msxrom/disk.rom
+  ROM_IMAGE = config-msx.rom
 endif
 
 BUILD_DIR = build/$(BOARD)
