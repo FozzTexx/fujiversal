@@ -4,6 +4,8 @@
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
 
+#define VERBOSE_DEBUG 0
+
 #ifdef USE_STDIO
 #include <stdio.h>
 #define DEBUG_PRINTF printf
@@ -55,7 +57,7 @@ pio_sm_t state_machine[3];
     x = x | (x >>16);    \
     x + 1; })
 
-#define RING_SIZE 256
+#define RING_SIZE 1024
 #define ring_append(buf, in, x) ({buf[in] = x; in = (in + 1) % sizeof(buf); })
 #define check_tx() ({ \
       if (multicore_fifo_rvalid()) {                    \
@@ -241,15 +243,22 @@ void sendReplyPacket(fujiDeviceID_t source, bool ack, void *data, size_t length)
     FujiBusPacket packet(source, ack ? FUJICMD_ACK : FUJICMD_NAK,
                          ack ? std::string(static_cast<const char*>(data), length) : "");
     ByteBuffer encoded = packet.serialize();
-#ifdef USE_STDIO
-    printf("Sending reply: dev:%02x cmd:%02x len:%04x\n",
+#if VERBOSE_DEBUG
+    DEBUG_PRINTF("Sending reply: dev:%02x cmd:%02x len:%04x\n",
            packet.device(), packet.command(), encoded.size());
-#endif // USE_STDIO
+#endif // VERBOSE_DEBUG
+#ifdef USE_STDIO
     fwrite(encoded.data(), 1, encoded.size(), stdout);
     fflush(stdout);
-#ifdef USE_STDIO
-    printf("Sent\n");
+#else
+    tud_cdc_write(encoded.data(), (uint32_t) encoded.size());
+    tud_cdc_write_flush();
+    while (tud_cdc_write_available() < CFG_TUD_CDC_TX_BUFSIZE)
+      tud_task();
 #endif // USE_STDIO
+#if VERBOSE_DEBUG
+    DEBUG_PRINTF("Sent\n");
+#endif // VERBOSE_DEBUG
     return;
 }
 
@@ -259,7 +268,9 @@ bool process_command(ByteBuffer &buffer)
 
 
   if (!packet) {
-    //printf("Failed to decode packet\n");
+#if VERBOSE_DEBUG
+    DEBUG_PRINTF("Failed to decode packet\n");
+#endif // VERBOSE_DEBUG
     return false;
   }
 
@@ -268,13 +279,13 @@ bool process_command(ByteBuffer &buffer)
     {
       size_t offset = packet->param(0) * ROM_SEG_SIZE;
       offset %= sizeof(ramrom);
-#ifdef USE_STDIO
-      printf("Opening RAM at 0x%04x\n", offset);
-#endif // USE_STDIO
       ramrom_ptr = &ramrom[offset];
       ramrom_pos = 0;
       ramrom_needs_activate = false;
       sendReplyPacket(packet->device(), true, nullptr, 0);
+#if VERBOSE_DEBUG
+      DEBUG_PRINTF("Opening RAM at 0x%04x\n", offset);
+#endif // VERBOSE_DEBUG
     }
     break;
 
@@ -284,9 +295,9 @@ bool process_command(ByteBuffer &buffer)
         sendReplyPacket(packet->device(), false, nullptr, 0);
 
       size_t len = std::min(packet->data()->size(), sizeof(ramrom) - ramrom_pos);
-#ifdef USE_STDIO
-      printf("Writing %d bytes to 0x%04x\n", len, ramrom_pos);
-#endif // USE_STDIO
+#if VERBOSE_DEBUG
+      DEBUG_PRINTF("Writing %d bytes to 0x%04x\n", len, ramrom_pos);
+#endif // VERBOSE_DEBUG
       if (len) {
         memcpy(&ramrom_ptr[ramrom_pos], packet->data()->data(), len);
         ramrom_pos += len;
@@ -302,9 +313,9 @@ bool process_command(ByteBuffer &buffer)
 
     ramrom_pos = -1;
     ramrom_needs_activate = true;
-#ifdef USE_STDIO
-    printf("Closing RAM %d\n", ramrom_needs_activate);
-#endif // USE_STDIO
+#if VERBOSE_DEBUG
+    DEBUG_PRINTF("Closing RAM %d\n", ramrom_needs_activate);
+#endif // VERBOSE_DEBUG
     sendReplyPacket(packet->device(), true, nullptr, 0);
     break;
 
@@ -378,7 +389,9 @@ int main()
     if (command_buf.size()) {
       // Did we timeout waiting for final SLIP_END?
       if (now - last_cc_seen > 50) {
-        //printf("Command timeout\r\n");
+#if VERBOSE_DEBUG
+        DEBUG_PRINTF("Command timeout %d\r\n", command_buf.size());
+#endif // VERBOSE_DEBUG
         for (char c : command_buf)
           ring_append(ring_rx, ring_rx_in, (uint8_t) c);
         command_buf.clear();
@@ -408,7 +421,9 @@ int main()
           if (command_buf.size()) {
             // If second char is not a command for us, send command_buf to RBS
             if (command_size == 2 && input != FUJI_DEVICEID_DBC) {
-              //printf("Command not us\r\n");
+#if VERBOSE_DEBUG
+              DEBUG_PRINTF("Command not us\r\n");
+#endif // VERBOSE_DEBUG
               for (char c : command_buf)
                 ring_append(ring_rx, ring_rx_in, (uint8_t) c);
               command_buf.clear();
