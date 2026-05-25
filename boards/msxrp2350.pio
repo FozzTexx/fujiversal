@@ -1,5 +1,5 @@
 .define public DATA_WIDTH	8
-.define public ADDR_WIDTH	18
+.define public ADDR_WIDTH	16
 .define public PIN_COUNT	32
 .define public WAIT_CYCLES	8
 
@@ -96,7 +96,6 @@ have_byte:
 // Init the data pins as input so they start in Hi-Z state
 static const pin_range_t read_pins[] = {
   { D0_PIN, DATA_WIDTH	     },
-  { DIR_PIN, 1, GPIO_OUT     },
   { SLTSL_PIN, 1, GPIO_IN, true },
   {},
 };
