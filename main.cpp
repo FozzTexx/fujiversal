@@ -457,14 +457,21 @@ int main()
     if (serial_ready && ring_tx_in != ring_tx_out) {
 #ifdef USE_STDIO
       putchar(ring_tx[ring_tx_out]);
+      ring_tx_out = (ring_tx_out + 1) % sizeof(ring_tx);
 #else
+      unsigned contig = (ring_tx_in > ring_tx_out)
+        ? (ring_tx_in - ring_tx_out)
+        : (sizeof(ring_tx) - ring_tx_out);
+
       while (tud_cdc_write_available() < 1)
         tud_task();
-      tud_cdc_write_char(ring_tx[ring_tx_out]);
-      tud_cdc_write_flush();
-#endif // USE_STDIO
 
-      ring_tx_out = (ring_tx_out + 1) % sizeof(ring_tx);
+      uint32_t room = tud_cdc_write_available();
+      uint32_t to_write = (contig < room) ? contig : room;
+      uint32_t written = tud_cdc_write(&ring_tx[ring_tx_out], to_write);
+      tud_cdc_write_flush();
+      ring_tx_out = (ring_tx_out + written) % sizeof(ring_tx);
+#endif // USE_STDIO
     }
   }
 
