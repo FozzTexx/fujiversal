@@ -70,7 +70,8 @@ pio_sm_t state_machine[3];
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
-volatile bool ramrom_needs_activate = false;
+volatile bool ramrom_ready = false;
+volatile bool ramrom_active = false;
 
 #define SERIAL_BEGIN_DELAY 100
 
@@ -194,14 +195,6 @@ void __time_critical_func(romulan)(void)
     if (!ramrom_ptr && rom_ptr != ROM)
       rom_ptr == ROM;
 
-    if (ramrom_needs_activate) {
-      //printf("Activating RAM\n"); // FIXME - why is this print necessary?
-      __dsb(); // Now printf isn't necessary!
-      if (ramrom_ptr)
-        rom_ptr = ramrom_ptr;
-      ramrom_needs_activate = false;
-    }
-
     // FIXME - only check IO_BASE if rom_ptr == ROM
     if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
       unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
@@ -215,12 +208,34 @@ void __time_critical_func(romulan)(void)
         pio_put_fifo(PSM_READ, sio_hw->fifo_rd);
         break;
       case IO_STATUS: // Read status reg
-        pio_put_fifo(PSM_READ, sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? IO_FLAG_AVAIL : 0x00);
+        pio_put_fifo(PSM_READ,
+          (sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? IO_FLAG_AVAIL : 0x00)
+          | (ramrom_ready ? IO_FLAG_USERROM_READY : 0x00)
+        );
         break;
       case IO_PUTC: // Write byte
         sio_hw->fifo_wr = bus.combined;
         break;
+
       case IO_CONTROL: // Write control reg
+        // Command to enable/disable user ROM, or enable/disable ROM autostart
+      	if (bus.data & IO_FLAG_ROM_MODE_CMD) {
+          // Enable user ROM
+          if (bus.data & IO_FLAG_USERROM_ENABLE) {
+            ramrom_active = true;
+            rom_ptr = &ramrom[0];
+          }
+          // // Enable auto start (CoCo)
+          // else if (bus.data & IO_FLAG_AUTOSTART_ENABLE) {
+          //   // TODO: implement auto start
+          // }
+          // // Disable user ROM and (?) auto start
+          // else if (bus.data == IO_FLAG_ROM_MODE_CMD) {
+          //   ramrom_active = false;
+          //   rom_ptr = &ROM[0];
+          //   // TODO: implement disabling auto start
+          // }
+       	}
         break;
       }
     }
@@ -281,7 +296,7 @@ bool process_command(ByteBuffer &buffer)
       offset %= sizeof(ramrom);
       ramrom_ptr = &ramrom[offset];
       ramrom_pos = 0;
-      ramrom_needs_activate = false;
+      ramrom_ready = false;
       sendReplyPacket(packet->device(), true, nullptr, 0);
 #if VERBOSE_DEBUG
       DEBUG_PRINTF("Opening RAM at 0x%04x\n", offset);
@@ -312,9 +327,9 @@ bool process_command(ByteBuffer &buffer)
       sendReplyPacket(packet->device(), false, nullptr, 0);
 
     ramrom_pos = -1;
-    ramrom_needs_activate = true;
+    ramrom_ready = true;
 #if VERBOSE_DEBUG
-    DEBUG_PRINTF("Closing RAM %d\n", ramrom_needs_activate);
+    DEBUG_PRINTF("Closing RAM %d\n", ramrom_ready);
 #endif // VERBOSE_DEBUG
     sendReplyPacket(packet->device(), true, nullptr, 0);
     break;
@@ -322,7 +337,8 @@ bool process_command(ByteBuffer &buffer)
   case FUJICMD_RESET:
     ramrom_pos = -1;
     ramrom_ptr = nullptr;
-    ramrom_needs_activate = false;
+    ramrom_active = false;
+    ramrom_ready = false;
     break;
 
   default:

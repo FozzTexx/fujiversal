@@ -13,7 +13,13 @@
 .define public IO_PUTC		2
 .define public IO_CONTROL	3
 
-.define public IO_FLAG_AVAIL	0x80
+.define public IO_FLAG_AVAIL			0x80
+.define public IO_FLAG_USERROM_READY	0x40
+.define public IO_FLAG_ROM_MODE_CMD		0b00000100
+.define public IO_FLAG_USERROM_ENABLE	0b00000001
+.define public IO_FLAG_AUTOSTART_ENABLE	0b00000100
+.define public IO_FLAG_ROM_BANK_CMD		0b10000000
+.define public IO_MASK_ROM_BANK			0b00001111
 
 .define public BUS_ROM_BASE	0x4000
 .define public BUS_ROM_TOP	BUS_ROM_BASE * 3
