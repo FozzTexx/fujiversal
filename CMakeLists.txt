@@ -42,6 +42,8 @@ pico_generate_pio_header(${PROJECT_NAME}
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD}.pio
 )
 
+target_compile_definitions(${PROJECT_NAME} PRIVATE CFG_TUD_CDC_TX_BUFSIZE=1024)
+
 target_link_libraries(${PROJECT_NAME}
     pico_stdlib
     pico_multicore
