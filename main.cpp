@@ -30,6 +30,13 @@
 #define IO_TOP     (IO_BASE + 4)
 #endif
 
+#define IO_FLAG_USERROM_READY	    0x40
+#define IO_FLAG_ROM_MODE_CMD		  0b00000100
+#define IO_FLAG_USERROM_ENABLE	  0b00000001
+#define IO_FLAG_AUTOSTART_ENABLE	0b00000100
+#define IO_FLAG_ROM_BANK_CMD		  0b10000000
+#define IO_MASK_ROM_BANK			    0b00001111
+
 #define ROM disk_rom
 #define ROM_SEG_SIZE 16384
 #define ROM_MAX_SEGS 8
