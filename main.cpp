@@ -77,6 +77,7 @@ pio_sm_t state_machine[3];
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
 uint8_t *ramrom_ptr = nullptr;
+uint8_t ramrom_bank = 0;
 volatile bool ramrom_ready = false;
 volatile bool ramrom_active = false;
 
@@ -227,22 +228,24 @@ void __time_critical_func(romulan)(void)
       case IO_CONTROL: // Write control reg
         // Command to enable/disable user ROM, or enable/disable ROM autostart
       	if (bus.data & IO_FLAG_ROM_MODE_CMD) {
-          // Enable user ROM
+          // Enable/disable user ROM
           if (bus.data & IO_FLAG_USERROM_ENABLE) {
             ramrom_active = true;
-            rom_ptr = &ramrom[0];
+            rom_ptr = &ramrom[ramrom_bank * ROM_SEG_SIZE];
+          }
+          else {
+            ramrom_active = false;
+            rom_ptr = &ROM[0];
           }
           // // Enable auto start (CoCo)
           // else if (bus.data & IO_FLAG_AUTOSTART_ENABLE) {
           //   // TODO: implement auto start
           // }
-          // // Disable user ROM and (?) auto start
-          // else if (bus.data == IO_FLAG_ROM_MODE_CMD) {
-          //   ramrom_active = false;
-          //   rom_ptr = &ROM[0];
-          //   // TODO: implement disabling auto start
-          // }
        	}
+        else if (bus.data & IO_FLAG_ROM_BANK_CMD) {
+          ramrom_bank = bus.data & IO_MASK_ROM_BANK;
+          rom_ptr = &ramrom[ramrom_bank * ROM_SEG_SIZE];
+        }
         break;
       }
     }
@@ -346,6 +349,7 @@ bool process_command(ByteBuffer &buffer)
     ramrom_ptr = nullptr;
     ramrom_active = false;
     ramrom_ready = false;
+    ramrom_bank = 0;
     break;
 
   default:
