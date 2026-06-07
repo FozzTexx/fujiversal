@@ -16,6 +16,7 @@
 .define public CLOCK_PIN	33	; 6809 clock E signal
 
 .define public RESET_PIN	35	; RESET
+.define public CART_PIN		36	; CoCo cartridge CART line (autostart trigger), active-low
 
 .define public LED_PIN		39	; LED on the Core2350B itself
 
@@ -158,3 +159,4 @@ void read_init_setup(sm_setup_t *setup)
   setup->jmp_pin	    = -1;
 };
 %}
+
