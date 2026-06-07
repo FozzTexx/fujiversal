@@ -15,7 +15,7 @@
 .define public IO_PUTC		2
 .define public IO_CONTROL	3
 
-.define public IO_FLAG_AVAIL			0x80
+.define public IO_FLAG_AVAIL	0x80
 
 .define public BUS_ROM_BASE	0x4000
 .define public BUS_ROM_TOP	BUS_ROM_BASE * 3
