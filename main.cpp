@@ -33,7 +33,7 @@
 #define IO_FLAG_USERROM_READY	    0x40
 #define IO_FLAG_ROM_MODE_CMD		  0b00000100
 #define IO_FLAG_USERROM_ENABLE	  0b00000001
-#define IO_FLAG_AUTOSTART_ENABLE	0b00000100
+#define IO_FLAG_AUTOSTART_ENABLE	0b00000010
 #define IO_FLAG_ROM_BANK_CMD		  0b10000000
 #define IO_MASK_ROM_BANK			    0b00001111
 
@@ -76,10 +76,23 @@ pio_sm_t state_machine[3];
 
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
-uint8_t *ramrom_ptr = nullptr;
+uint8_t * volatile ramrom_ptr = nullptr;
 uint8_t ramrom_bank = 0;
 volatile bool ramrom_ready = false;
 volatile bool ramrom_active = false;
+
+#ifdef BOARD_coco_proto_260402
+// Power-on-like Program Pak boot: on user-ROM enable we point rom_ptr at the
+// .CCC (so $C000 != "DK" and the reset routine can't reload HDB-DOS), pulse
+// RESET_PIN low for a clean hardware reset, then toggle CART_PIN at ~60Hz like
+// a real Program Pak's CART line so the reset routine autostarts the cartridge.
+volatile bool reset_active = false;          // RESET asserted, pending release
+volatile uint32_t reset_assert_ms = 0;       // when core 0 asserted RESET
+volatile bool cart_toggle_active = false;    // core 0 toggles CART_PIN at ~60Hz
+volatile uint32_t cart_toggle_start_ms = 0;  // when the CART toggle started
+#define RESET_PULSE_MS 50                   // hold RESET low this long
+#define CART_TOGGLE_MS 1500                 // toggle CART this long after autostart
+#endif // BOARD_coco_proto_260402
 
 #define SERIAL_BEGIN_DELAY 100
 
@@ -163,6 +176,17 @@ void setup_pio_irq_logic()
 #ifdef BOARD_coco_proto_260402
   // FIXME - doesn't belong here
   gpio_pull_up(IGNORE_PIN); // unused middle pin needs to be inverted to avoid false zero
+
+  // Park CART_PIN high (deasserted) at boot; the autostart toggle drives it.
+  gpio_init(CART_PIN);
+  gpio_set_dir(CART_PIN, GPIO_OUT);
+  gpio_put(CART_PIN, 1);
+
+  // RESET_PIN is open-drain: latch 0 so driving it OUT asserts RESET low, and
+  // start as input (released - the CoCo's pull-up holds RESET high).
+  gpio_init(RESET_PIN);
+  gpio_put(RESET_PIN, 0);
+  gpio_set_dir(RESET_PIN, GPIO_IN);
 #endif
 
 #if USE_IRQ
@@ -201,7 +225,7 @@ void __time_critical_func(romulan)(void)
 #endif
 
     if (!ramrom_ptr && rom_ptr != ROM)
-      rom_ptr == ROM;
+      rom_ptr = ROM;
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
     if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
@@ -232,15 +256,25 @@ void __time_critical_func(romulan)(void)
           if (bus.data & IO_FLAG_USERROM_ENABLE) {
             ramrom_active = true;
             rom_ptr = &ramrom[ramrom_bank * ROM_SEG_SIZE];
+            if (bus.data & IO_FLAG_AUTOSTART_ENABLE) {
+#ifdef BOARD_coco_proto_260402
+              // Enable auto start (CoCo)
+              // Start the ~60Hz CART toggle and pulse RESET low;
+              // the CoCo comes out of a clean hardware reset and its own reset
+              // routine autostarts the cartridge.
+              cart_toggle_active = true;
+              cart_toggle_start_ms = to_ms_since_boot(get_absolute_time());
+              gpio_put(RESET_PIN, 0);
+              gpio_set_dir(RESET_PIN, GPIO_OUT);   // assert RESET low
+              reset_active = true;
+              reset_assert_ms = to_ms_since_boot(get_absolute_time());
+#endif // BOARD_coco_proto_260402
+            }
           }
           else {
             ramrom_active = false;
             rom_ptr = &ROM[0];
           }
-          // // Enable auto start (CoCo)
-          // else if (bus.data & IO_FLAG_AUTOSTART_ENABLE) {
-          //   // TODO: implement auto start
-          // }
        	}
         else if (bus.data & IO_FLAG_ROM_BANK_CMD) {
           ramrom_bank = bus.data & IO_MASK_ROM_BANK;
@@ -410,6 +444,29 @@ int main()
 
     if (!serial_ready && now - loop_begin > SERIAL_BEGIN_DELAY)
       serial_ready = true;
+
+#ifdef BOARD_coco_proto_260402
+    // Release RESET once the pulse has elapsed (open-drain: back to input) so
+    // the CoCo boots from a clean hardware reset. Unsigned delta is
+    // wraparound-safe.
+    if (reset_active && now - reset_assert_ms >= RESET_PULSE_MS) {
+      gpio_set_dir(RESET_PIN, GPIO_IN);
+      reset_active = false;
+    }
+    // Toggle CART at ~60Hz (period ~16ms) like a Program Pak's CART line so the
+    // reset routine's cart-FIRQ check fires and autostarts the .CCC. Stop after
+    // the autostart window and park CART high (deasserted) so leftover CART
+    // FIRQs don't disrupt a later CFGLOAD/CONFIG.BIN boot. Unsigned delta is
+    // wraparound-safe.
+    if (cart_toggle_active) {
+      if (now - cart_toggle_start_ms >= CART_TOGGLE_MS) {
+        cart_toggle_active = false;
+        gpio_put(CART_PIN, 1);
+      }
+      else
+        gpio_put(CART_PIN, (now >> 3) & 1);
+    }
+#endif // BOARD_coco_proto_260402
 
     check_tx();
 
