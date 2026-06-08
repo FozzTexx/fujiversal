@@ -86,9 +86,10 @@ volatile bool ramrom_active = false;
 // .CCC (so $C000 != "DK" and the reset routine can't reload HDB-DOS), pulse
 // RESET_PIN low for a clean hardware reset, then toggle CART_PIN at ~60Hz like
 // a real Program Pak's CART line so the reset routine autostarts the cartridge.
-volatile uint32_t reset_release_at_ms = 0;  // when core 0 deasserts RESET
-volatile bool cart_toggle_active = false;   // core 0 toggles CART_PIN at ~60Hz
-volatile uint32_t cart_toggle_stop_at_ms = 0; // when core 0 parks CART high
+volatile bool reset_active = false;          // RESET asserted, pending release
+volatile uint32_t reset_assert_ms = 0;       // when core 0 asserted RESET
+volatile bool cart_toggle_active = false;    // core 0 toggles CART_PIN at ~60Hz
+volatile uint32_t cart_toggle_start_ms = 0;  // when the CART toggle started
 #define RESET_PULSE_MS 50                   // hold RESET low this long
 #define CART_TOGGLE_MS 1500                 // toggle CART this long after autostart
 #endif // BOARD_coco_proto_260402
@@ -262,10 +263,11 @@ void __time_critical_func(romulan)(void)
               // the CoCo comes out of a clean hardware reset and its own reset
               // routine autostarts the cartridge.
               cart_toggle_active = true;
-              cart_toggle_stop_at_ms = to_ms_since_boot(get_absolute_time()) + CART_TOGGLE_MS;
+              cart_toggle_start_ms = to_ms_since_boot(get_absolute_time());
               gpio_put(RESET_PIN, 0);
               gpio_set_dir(RESET_PIN, GPIO_OUT);   // assert RESET low
-              reset_release_at_ms = to_ms_since_boot(get_absolute_time()) + RESET_PULSE_MS;
+              reset_active = true;
+              reset_assert_ms = to_ms_since_boot(get_absolute_time());
 #endif // BOARD_coco_proto_260402
             }
           }
@@ -444,21 +446,21 @@ int main()
       serial_ready = true;
 
 #ifdef BOARD_coco_proto_260402
-    // Release RESET after the pulse (open-drain: back to input) so the CoCo
-    // boots from a clean hardware reset. Signed compare is wraparound-safe.
-    if (reset_release_at_ms && (int32_t)(now - reset_release_at_ms) >= 0) {
+    // Release RESET once the pulse has elapsed (open-drain: back to input) so
+    // the CoCo boots from a clean hardware reset. Unsigned delta is
+    // wraparound-safe.
+    if (reset_active && now - reset_assert_ms >= RESET_PULSE_MS) {
       gpio_set_dir(RESET_PIN, GPIO_IN);
-      reset_release_at_ms = 0;
+      reset_active = false;
     }
     // Toggle CART at ~60Hz (period ~16ms) like a Program Pak's CART line so the
     // reset routine's cart-FIRQ check fires and autostarts the .CCC. Stop after
     // the autostart window and park CART high (deasserted) so leftover CART
-    // FIRQs don't disrupt a later CFGLOAD/CONFIG.BIN boot. Signed compare is
+    // FIRQs don't disrupt a later CFGLOAD/CONFIG.BIN boot. Unsigned delta is
     // wraparound-safe.
     if (cart_toggle_active) {
-      if ((int32_t)(now - cart_toggle_stop_at_ms) >= 0) {
+      if (now - cart_toggle_start_ms >= CART_TOGGLE_MS) {
         cart_toggle_active = false;
-        cart_toggle_stop_at_ms = 0;
         gpio_put(CART_PIN, 1);
       }
       else
