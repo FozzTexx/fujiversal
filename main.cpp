@@ -95,6 +95,8 @@ volatile uint32_t cart_toggle_start_ms = 0;  // when the CART toggle started
 #endif // BOARD_coco_proto_260402
 
 #define SERIAL_BEGIN_DELAY 100
+#define CDC_CONNECT_TIMEOUT_MS 10000   // safety cap waiting for the ESP32 USB CDC link
+#define ESP_READY_SETTLE_MS 2000       // extra hold for FujiNet to reach DriveWire-ready
 
 #ifndef USE_STDIO
 #include <stdarg.h>
@@ -182,11 +184,13 @@ void setup_pio_irq_logic()
   gpio_set_dir(CART_PIN, GPIO_OUT);
   gpio_put(CART_PIN, 1);
 
-  // RESET_PIN is open-drain: latch 0 so driving it OUT asserts RESET low, and
-  // start as input (released - the CoCo's pull-up holds RESET high).
+  // RESET_PIN is open-drain: latch 0 so driving it OUT asserts RESET low. Hold
+  // the CoCo in reset from power-on; core 0 releases it once the USB bridge is
+  // ready (CDC connected or timeout) so the CoCo can't reach CFGLOAD's
+  // CONFIG.BIN load before the bridge can serve it.
   gpio_init(RESET_PIN);
   gpio_put(RESET_PIN, 0);
-  gpio_set_dir(RESET_PIN, GPIO_IN);
+  gpio_set_dir(RESET_PIN, GPIO_OUT);
 #endif
 
 #if USE_IRQ
@@ -424,10 +428,30 @@ int main()
     ;
 #else
   tusb_init();
+#ifdef BOARD_coco_proto_260402
+  // The CoCo is held in reset (asserted in setup_pio_irq_logic). Wait for the
+  // ESP32 FujiNet link to come up over USB CDC, then give its firmware a settle
+  // window to become DriveWire-ready, before releasing the CoCo - otherwise
+  // HDB-DOS issues DriveWire requests the ESP32 can't yet answer and stalls at
+  // the copyright. CDC_CONNECT_TIMEOUT_MS is only a safety cap.
+  uint32_t hold_begin = to_ms_since_boot(get_absolute_time());
+  while (!tud_cdc_connected()
+         && to_ms_since_boot(get_absolute_time()) - hold_begin < CDC_CONNECT_TIMEOUT_MS) {
+    tud_task();
+    check_tx();
+  }
+  uint32_t settle_begin = to_ms_since_boot(get_absolute_time());
+  while (to_ms_since_boot(get_absolute_time()) - settle_begin < ESP_READY_SETTLE_MS) {
+    tud_task();
+    check_tx();
+  }
+  gpio_set_dir(RESET_PIN, GPIO_IN);   // release the CoCo; ESP32 link is ready
+#else
   while (!tud_cdc_connected()) {
     tud_task();
     check_tx();
   }
+#endif // BOARD_coco_proto_260402
 #endif // USE_STDIO
 
 #if 0
