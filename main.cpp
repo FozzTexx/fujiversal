@@ -3,6 +3,9 @@
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
+#include "fujiROMType.h"
+#include <cstddef>
+#include <cstdint>
 
 #define VERBOSE_DEBUG 0
 
@@ -13,6 +16,7 @@
 #pragma GCC poison printf putchar getchar
 #endif // USE_STDIO
 
+#include <array>
 #include <string.h>
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
@@ -39,8 +43,10 @@
 
 #define ROM disk_rom
 #define ROM_SEG_SIZE 16384
-#define ROM_MAX_SEGS 8
+#define ROM_MAX_SEGS 16
 #define RAMROM_ACTIVATE_ADDR 0x4000
+#define SIZE_8K   0x2000
+#define SIZE_16K  0x4000
 
 #define USE_IRQ 0
 
@@ -77,7 +83,11 @@ pio_sm_t state_machine[3];
 uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
 int ramrom_pos = -1;
 uint8_t * volatile ramrom_ptr = nullptr;
-uint8_t ramrom_bank = 0;
+volatile fujiROMType_t ramrom_type = ROM_TYPE_UNKNOWN;
+std::array<uint32_t, ROM_MAX_SEGS> bank_offsets;
+volatile uint16_t bank_size = ROM_SEG_SIZE;
+volatile uint16_t ramrom_bank_count = 1;
+volatile uint8_t ramrom_bank = 0;
 volatile bool ramrom_ready = false;
 volatile bool ramrom_active = false;
 
@@ -203,8 +213,9 @@ void __time_critical_func(romulan)(void)
   BusSignals bus;
   uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(ROM));
   uint8_t *rom_ptr = ROM;
-  uint32_t last_addr = -1;
-
+  uint32_t last_bus_state = -1;
+  uint8_t bank = 0;
+  bool switch_bank = false;
 
   setup_pio_irq_logic();
 
@@ -215,7 +226,7 @@ void __time_critical_func(romulan)(void)
     bus.combined = pio_get_fifo(PSM_WAITSEL);
 #endif // PSM_SENDBUS
 #if !defined(BOARD_picorom_coco) && !defined(BOARD_coco_proto_260402)
-    if (bus.addr == last_addr)
+    if (bus.combined == last_bus_state)
       continue;
 #endif
 
@@ -228,7 +239,7 @@ void __time_critical_func(romulan)(void)
       rom_ptr = ROM;
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
-    if (IO_BASE <= bus.addr && bus.addr < IO_TOP) {
+    if (!ramrom_active && IO_BASE <= bus.addr && bus.addr < IO_TOP) {
       unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
 #ifdef RW_PIN
       if (!bus.rw)
@@ -283,15 +294,73 @@ void __time_critical_func(romulan)(void)
         break;
       }
     }
-    else if (BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP) {
-      rom_offset = bus.addr - BUS_ROM_BASE;
-      //rom_offset &= POW2_CEIL(sizeof(ROM)) - 1;
-      bus.data = rom_ptr[rom_offset];
-      pio_put_fifo(PSM_READ, rom_ptr[rom_offset]);
-      //DEBUG_PRINTF("PEEK ADDR:%04x DATA:%02x\r\n", bus.addr, bus.data);
+#ifdef RD_PIN
+    else if (bus.rd && ramrom_active && (0x4000 <= bus.addr) && (bus.addr < 0xC000)) {
+      switch_bank = false;
+      switch (ramrom_type) {
+        case ROM_TYPE_MSX_ASCII8:
+          if ((0x6000 <= bus.addr) && (bus.addr < 0x8000)) {
+            // 0x6000 = 0, 0x6800 = 1, 0x7000 = 2, 0x7800 = 3
+            bank = (bus.addr >> 11) & 3;
+            switch_bank = true;
+          }
+          break;
+        case ROM_TYPE_MSX_ASCII16:
+          if ((0x6000 <= bus.addr) && (bus.addr < 0x7800) && !(bus.addr & 0x0800)) {
+            // 0x6000 = 0, 0x7000 = 1
+            bank = (bus.addr >> 12) & 1;
+            switch_bank = true;
+          }
+          break;
+        case ROM_TYPE_MSX_KONAMI:
+          // [0x4000..0x6000) is fixed at segment 0.
+          if (0x6000 <= bus.addr && bus.addr < 0xC000) {
+            // 0x6000 = 3, 0x8000 = 4, 0xA000 = 5
+            // subtract 2 because ROM starts at 0x4000
+            bank = (bus.addr >> 13) - 2;
+            switch_bank = true;
+          }
+          break;
+        case ROM_TYPE_MSX_KONAMI_SCC:
+          if (0x5000 <= bus.addr && bus.addr < 0xC000 && (bus.addr & 0x1800) == 0x1000) {
+            // 0x5000 = 2, 0x7000 = 3, 0x9000 = 4, 0xB000 = 5
+            // subtract 2 because ROM starts at 0x4000
+            bank = (bus.addr >> 13) - 2;
+            switch_bank = true;
+            // TODO: if bank = 4 clear SCC cache
+          }
+          break;
+        default:
+          break;
+      }
+      if (switch_bank)
+        bank_offsets[bank] = (bus.data % ramrom_bank_count) * bank_size;
+    }
+#endif
+    else if ((BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP)) {
+      rom_offset = bus.addr;
+
+      if (ramrom_type == ROM_TYPE_MSX_KONAMI) {
+        // [0x0000, 0x4000) mirrors [0x4000, 0x8000)
+        if (bus.addr < 0x4000) rom_offset += 0x4000;
+        // [0xC000, 0x10000) mirrors [0x8000, 0xC000)
+        else if (bus.addr >= 0xC000) rom_offset -= 0x4000;
+      }
+      else if (ramrom_type == ROM_TYPE_MSX_KONAMI_SCC) {
+        // [0x0000, 0x4000) mirrors [0xC000, 0x10000)
+        if (bus.addr < 0x4000) rom_offset += 0x8000;
+        // [0xC000, 0x10000) mirrors [0x4000, 0x8000)
+        else if (bus.addr >= 0xC000) rom_offset -= 0x8000;
+      }
+
+      rom_offset -= BUS_ROM_BASE;
+      bank = rom_offset >> (12 + (bank_size >> 13));
+
+      bus.data = rom_ptr[rom_offset + bank_offsets[bank] - bank * bank_size];
+      pio_put_fifo(PSM_READ, bus.data);
     }
 
-    last_addr = bus.addr;
+    last_bus_state = bus.combined;
   }
 
   return;
@@ -321,10 +390,17 @@ void sendReplyPacket(fujiDeviceID_t source, bool ack, void *data, size_t length)
     return;
 }
 
+void reset_bank_offsets()
+{
+  uint32_t offset = 0;
+  // Initialize bank offsets to be sequential segments
+  for (int i = 0; i < ROM_MAX_SEGS; i++, offset += bank_size)
+    bank_offsets[i] = offset;
+}
+
 bool process_command(ByteBuffer &buffer)
 {
   auto packet = FujiBusPacket::fromSerialized(buffer);
-
 
   if (!packet) {
 #if VERBOSE_DEBUG
@@ -341,6 +417,9 @@ bool process_command(ByteBuffer &buffer)
       ramrom_ptr = &ramrom[offset];
       ramrom_pos = 0;
       ramrom_ready = false;
+      ramrom_type = (fujiROMType_t)packet->param(1);
+      bank_size = ramrom_type & 0x80 ? SIZE_16K : SIZE_8K;
+      reset_bank_offsets();
       sendReplyPacket(packet->device(), true, nullptr, 0);
 #if VERBOSE_DEBUG
       DEBUG_PRINTF("Opening RAM at 0x%04x\n", offset);
@@ -369,7 +448,10 @@ bool process_command(ByteBuffer &buffer)
   case FUJICMD_CLOSE:
     if (ramrom_pos < 0 || !ramrom_ptr)
       sendReplyPacket(packet->device(), false, nullptr, 0);
-
+    if (ramrom_pos > 0)
+      ramrom_bank_count = (ramrom_pos + bank_size - 1) / bank_size;
+    if (ramrom_bank_count == 0)
+      ramrom_bank_count = 1;
     ramrom_pos = -1;
     ramrom_ready = true;
 #if VERBOSE_DEBUG
@@ -384,6 +466,7 @@ bool process_command(ByteBuffer &buffer)
     ramrom_active = false;
     ramrom_ready = false;
     ramrom_bank = 0;
+    ramrom_bank_count = 1;
     break;
 
   default:
@@ -406,6 +489,7 @@ int main()
   bool our_command = false, serial_ready = false;
   ByteBuffer command_buf;
 
+  reset_bank_offsets();
 
   set_sys_clock_khz(250000, true);
 
