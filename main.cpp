@@ -43,8 +43,11 @@
 
 #define ROM disk_rom
 #define ROM_SEG_SIZE 16384
+#ifdef PICO_RP2040
+#define ROM_MAX_SEGS 8
+#else
 #define ROM_MAX_SEGS 16
-#define RAMROM_ACTIVATE_ADDR 0x4000
+#endif // PICO_RP2040
 #define SIZE_8K   0x2000
 #define SIZE_16K  0x4000
 
@@ -80,16 +83,15 @@ pio_sm_t state_machine[3];
     })
 
 
-uint8_t ramrom[ROM_MAX_SEGS * ROM_SEG_SIZE];
-int ramrom_pos = -1;
-uint8_t * volatile ramrom_ptr = nullptr;
-volatile fujiROMType_t ramrom_type = ROM_TYPE_UNKNOWN;
+uint8_t user_rom[ROM_MAX_SEGS * ROM_SEG_SIZE];
+uint8_t * volatile user_rom_base = nullptr;
+volatile fujiROMType_t user_rom_type = ROM_TYPE_UNKNOWN;
 std::array<uint32_t, ROM_MAX_SEGS> bank_offsets;
 volatile uint16_t bank_size = ROM_SEG_SIZE;
-volatile uint16_t ramrom_bank_count = 1;
-volatile uint8_t ramrom_bank = 0;
-volatile bool ramrom_ready = false;
-volatile bool ramrom_active = false;
+volatile uint16_t user_rom_bank_count = 1;
+volatile uint8_t user_rom_selected_bank = 0;
+volatile bool user_rom_closed = false;
+volatile bool user_rom_active = false;
 
 #ifdef BOARD_coco_proto_260402
 // Power-on-like Program Pak boot: on user-ROM enable we point rom_ptr at the
@@ -235,11 +237,11 @@ void __time_critical_func(romulan)(void)
                  bus.addr, bus.data, 0, bus.scs, bus.rw, bus.unused, bus.combined);
 #endif
 
-    if (!ramrom_ptr && rom_ptr != ROM)
+    if (!user_rom_base && rom_ptr != ROM)
       rom_ptr = ROM;
 
     // FIXME - only check IO_BASE if rom_ptr == ROM
-    if (!ramrom_active && IO_BASE <= bus.addr && bus.addr < IO_TOP) {
+    if (!user_rom_active && IO_BASE <= bus.addr && bus.addr < IO_TOP) {
       unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
 #ifdef RW_PIN
       if (!bus.rw)
@@ -253,7 +255,7 @@ void __time_critical_func(romulan)(void)
       case IO_STATUS: // Read status reg
         pio_put_fifo(PSM_READ,
           (sio_hw->fifo_st & SIO_FIFO_ST_VLD_BITS ? IO_FLAG_AVAIL : 0x00)
-          | (ramrom_ready ? IO_FLAG_USERROM_READY : 0x00)
+          | (user_rom_closed ? IO_FLAG_USERROM_READY : 0x00)
         );
         break;
       case IO_PUTC: // Write byte
@@ -265,8 +267,8 @@ void __time_critical_func(romulan)(void)
       	if (bus.data & IO_FLAG_ROM_MODE_CMD) {
           // Enable/disable user ROM
           if (bus.data & IO_FLAG_USERROM_ENABLE) {
-            ramrom_active = true;
-            rom_ptr = &ramrom[ramrom_bank * ROM_SEG_SIZE];
+            user_rom_active = true;
+            rom_ptr = &user_rom[user_rom_selected_bank * ROM_SEG_SIZE];
             if (bus.data & IO_FLAG_AUTOSTART_ENABLE) {
 #ifdef BOARD_coco_proto_260402
               // Enable auto start (CoCo)
@@ -283,21 +285,21 @@ void __time_critical_func(romulan)(void)
             }
           }
           else {
-            ramrom_active = false;
+            user_rom_active = false;
             rom_ptr = &ROM[0];
           }
        	}
         else if (bus.data & IO_FLAG_ROM_BANK_CMD) {
-          ramrom_bank = bus.data & IO_MASK_ROM_BANK;
-          rom_ptr = &ramrom[ramrom_bank * ROM_SEG_SIZE];
+          user_rom_selected_bank = bus.data & IO_MASK_ROM_BANK;
+          rom_ptr = &user_rom[user_rom_selected_bank * ROM_SEG_SIZE];
         }
         break;
       }
     }
 #ifdef RD_PIN
-    else if (bus.rd && ramrom_active && (0x4000 <= bus.addr) && (bus.addr < 0xC000)) {
+    else if (bus.rd && user_rom_active && (0x4000 <= bus.addr) && (bus.addr < 0xC000)) {
       switch_bank = false;
-      switch (ramrom_type) {
+      switch (user_rom_type) {
         case ROM_TYPE_MSX_ASCII8:
           if ((0x6000 <= bus.addr) && (bus.addr < 0x8000)) {
             // 0x6000 = 0, 0x6800 = 1, 0x7000 = 2, 0x7800 = 3
@@ -334,19 +336,19 @@ void __time_critical_func(romulan)(void)
           break;
       }
       if (switch_bank)
-        bank_offsets[bank] = (bus.data % ramrom_bank_count) * bank_size;
+        bank_offsets[bank] = (bus.data % user_rom_bank_count) * bank_size;
     }
 #endif
     else if ((BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP)) {
       rom_offset = bus.addr;
 
-      if (ramrom_type == ROM_TYPE_MSX_KONAMI) {
+      if (user_rom_type == ROM_TYPE_MSX_KONAMI) {
         // [0x0000, 0x4000) mirrors [0x4000, 0x8000)
         if (bus.addr < 0x4000) rom_offset += 0x4000;
         // [0xC000, 0x10000) mirrors [0x8000, 0xC000)
         else if (bus.addr >= 0xC000) rom_offset -= 0x4000;
       }
-      else if (ramrom_type == ROM_TYPE_MSX_KONAMI_SCC) {
+      else if (user_rom_type == ROM_TYPE_MSX_KONAMI_SCC) {
         // [0x0000, 0x4000) mirrors [0xC000, 0x10000)
         if (bus.addr < 0x4000) rom_offset += 0x8000;
         // [0xC000, 0x10000) mirrors [0x4000, 0x8000)
@@ -400,7 +402,9 @@ void reset_bank_offsets()
 
 bool process_command(ByteBuffer &buffer)
 {
+  static int user_rom_write_pos = -1;
   auto packet = FujiBusPacket::fromSerialized(buffer);
+
 
   if (!packet) {
 #if VERBOSE_DEBUG
@@ -413,12 +417,12 @@ bool process_command(ByteBuffer &buffer)
   case FUJICMD_OPEN:
     {
       size_t offset = packet->param(0) * ROM_SEG_SIZE;
-      offset %= sizeof(ramrom);
-      ramrom_ptr = &ramrom[offset];
-      ramrom_pos = 0;
-      ramrom_ready = false;
-      ramrom_type = (fujiROMType_t)packet->param(1);
-      bank_size = ramrom_type & 0x80 ? SIZE_16K : SIZE_8K;
+      offset %= sizeof(user_rom);
+      user_rom_base = &user_rom[offset];
+      user_rom_write_pos = 0;
+      user_rom_closed = false;
+      user_rom_type = (fujiROMType_t)packet->param(1);
+      bank_size = user_rom_type & 0x80 ? SIZE_16K : SIZE_8K;
       reset_bank_offsets();
       sendReplyPacket(packet->device(), true, nullptr, 0);
 #if VERBOSE_DEBUG
@@ -429,16 +433,16 @@ bool process_command(ByteBuffer &buffer)
 
   case FUJICMD_WRITE:
     {
-      if (ramrom_pos < 0 || !ramrom_ptr)
+      if (user_rom_write_pos < 0 || !user_rom_base)
         sendReplyPacket(packet->device(), false, nullptr, 0);
 
-      size_t len = std::min(packet->data()->size(), sizeof(ramrom) - ramrom_pos);
+      size_t len = std::min(packet->data()->size(), sizeof(user_rom) - user_rom_write_pos);
 #if VERBOSE_DEBUG
-      DEBUG_PRINTF("Writing %d bytes to 0x%04x\n", len, ramrom_pos);
+      DEBUG_PRINTF("Writing %d bytes to 0x%04x\n", len, user_rom_write_pos);
 #endif // VERBOSE_DEBUG
       if (len) {
-        memcpy(&ramrom_ptr[ramrom_pos], packet->data()->data(), len);
-        ramrom_pos += len;
+        memcpy(&user_rom_base[user_rom_write_pos], packet->data()->data(), len);
+        user_rom_write_pos += len;
       }
 
       sendReplyPacket(packet->device(), true, nullptr, 0);
@@ -446,27 +450,27 @@ bool process_command(ByteBuffer &buffer)
     break;
 
   case FUJICMD_CLOSE:
-    if (ramrom_pos < 0 || !ramrom_ptr)
+    if (user_rom_write_pos < 0 || !user_rom_base)
       sendReplyPacket(packet->device(), false, nullptr, 0);
-    if (ramrom_pos > 0)
-      ramrom_bank_count = (ramrom_pos + bank_size - 1) / bank_size;
-    if (ramrom_bank_count == 0)
-      ramrom_bank_count = 1;
-    ramrom_pos = -1;
-    ramrom_ready = true;
+    if (user_rom_write_pos > 0)
+      user_rom_bank_count = (user_rom_write_pos + bank_size - 1) / bank_size;
+    if (user_rom_bank_count == 0)
+      user_rom_bank_count = 1;
+    user_rom_write_pos = -1;
+    user_rom_closed = true;
 #if VERBOSE_DEBUG
-    DEBUG_PRINTF("Closing RAM %d\n", ramrom_ready);
+    DEBUG_PRINTF("Closing RAM %d\n", user_rom_closed);
 #endif // VERBOSE_DEBUG
     sendReplyPacket(packet->device(), true, nullptr, 0);
     break;
 
   case FUJICMD_RESET:
-    ramrom_pos = -1;
-    ramrom_ptr = nullptr;
-    ramrom_active = false;
-    ramrom_ready = false;
-    ramrom_bank = 0;
-    ramrom_bank_count = 1;
+    user_rom_write_pos = -1;
+    user_rom_base = nullptr;
+    user_rom_active = false;
+    user_rom_closed = false;
+    user_rom_selected_bank = 0;
+    user_rom_bank_count = 1;
     break;
 
   default:
