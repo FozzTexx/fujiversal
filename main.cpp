@@ -340,6 +340,12 @@ void __time_critical_func(romulan)(void)
     }
 #endif
     else if ((BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP)) {
+#ifndef RD_PIN
+      // No banking hardware: serve directly to keep the response path short
+      rom_offset = bus.addr - BUS_ROM_BASE;
+      bus.data = rom_ptr[rom_offset];
+      pio_put_fifo(PSM_READ, bus.data);
+#else
       rom_offset = bus.addr;
 
       if (user_rom_type == ROM_TYPE_MSX_KONAMI) {
@@ -360,6 +366,7 @@ void __time_critical_func(romulan)(void)
 
       bus.data = rom_ptr[rom_offset + bank_offsets[bank] - bank * bank_size];
       pio_put_fifo(PSM_READ, bus.data);
+#endif // RD_PIN
     }
 
     last_bus_state = bus.combined;
