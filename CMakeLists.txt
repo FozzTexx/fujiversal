@@ -25,6 +25,7 @@ add_executable(${PROJECT_NAME}
     main.cpp
     FujiBusPacket.cpp
     setup_sm.cpp
+    diag_uart.cpp
 )
 
 # Include board-specific configuration
