@@ -57,7 +57,8 @@ idle:
 	out x, NUM_PINS		; grab the two /CTS /SCS bits we want
 	jmp !x idle		; if X is zero then /CTS and /SCS are high
 
-	jmp pin send		; If R/W is high no need to wait
+	; Reads signal from the rising edge too, so the read SM can read a low
+	; CLOCK as "this cycle is over" rather than "not started yet".
 	wait 1 gpio CLOCK_PIN	; wait for CLOCK
 
 send:
@@ -129,10 +130,12 @@ void send_bus_init_setup(sm_setup_t *setup)
 .wrap_target
 check_fifo:
 	pull block                     ; get byte to write
-	out pins, DATA_WIDTH           ; write byte to GPIO D0-D7
+	out pins, DATA_WIDTH           ; stage byte on D0-D7 (still inputs, Hi-Z)
 	mov osr, ~null                 ; put a whole bunch of 1s in OSR
+	jmp pin drive                  ; CLOCK still high: the cycle is ours
+	jmp check_fifo                 ; CLOCK low: missed the cycle, drop the byte
+drive:
 	out pindirs, DATA_WIDTH side 0 ; change D0-D7 to outputs
-	wait 1 gpio CLOCK_PIN          ; wait for start of cycle
 	wait 0 gpio CLOCK_PIN          ; wait for end of cycle
 	mov osr, null                  ; load up 0s
 	out pindirs, DATA_WIDTH side 1 ; change D0-D7 back to inputs
@@ -142,6 +145,7 @@ check_fifo:
 // Init the data pins as input so they start in Hi-Z state
 static const pin_range_t read_pins[] = {
   { D0_PIN, DATA_WIDTH, GPIO_IN },
+  { CLOCK_PIN, 1, GPIO_IN },
   {},
 };
 
@@ -156,7 +160,7 @@ void read_init_setup(sm_setup_t *setup)
   setup->sideset_base       = 31;
   setup->sideset_count      = 1;
   setup->sideset_opt        = true;
-  setup->jmp_pin	    = -1;
+  setup->jmp_pin	    = CLOCK_PIN;
 };
 %}
 

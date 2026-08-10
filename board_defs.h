@@ -1,3 +1,6 @@
+#ifndef BOARD_DEFS_H
+#define BOARD_DEFS_H
+
 #ifndef BOARD_NAME
     #error "No board defined in CMake"
 #else /* BOARD_NAME */
@@ -14,3 +17,5 @@
 #include PIO_HEADER
 
 #endif /* BOARD_NAME */
+
+#endif /* BOARD_DEFS_H */
