@@ -123,25 +123,42 @@ void send_bus_init_setup(sm_setup_t *setup)
 %}
 
 .program read
-.side_set 1 opt
+; Drive D0-D7 only while the cartridge is selected. "Selected" is
+; (/CTS low || /SCS low): /CTS covers the ROM window $C000-$FEFF, /SCS covers
+; the IO registers at $FF40-$FF5F. SCS_PIN, IGNORE_PIN and CTS_PIN are
+; consecutive, and IGNORE_PIN is pulled up, so it reads as 0 once inverted and
+; does not disturb the test -- same trick wait_sel uses.
+.define NUM_SEL 3               ; CTS_PIN - SCS_PIN + 1
 
-       mov x, ~null side 1	       ; set X to all 1s, set DIR_PIN to high
+	mov y, null                    ; y = 0, the "deselected" comparator
 .wrap_target
-check_fifo:
+wait_selected:
+	mov osr, ~pins                 ; read /SCS, IGNORE, /CTS inverted
+	out x, NUM_SEL                 ; x != 0 once either select is asserted
+	jmp !x wait_selected           ; spin while deselected
+
 	pull block                     ; get byte to write
 	out pins, DATA_WIDTH           ; write byte to GPIO D0-D7
 	mov osr, ~null                 ; put a whole bunch of 1s in OSR
-	out pindirs, DATA_WIDTH side 0 ; change D0-D7 to outputs
-	wait 1 gpio CLOCK_PIN          ; wait for start of cycle
-	wait 0 gpio CLOCK_PIN          ; wait for end of cycle
+	out pindirs, DATA_WIDTH        ; change D0-D7 to outputs
+
+wait_deselected:
+	mov osr, ~pins                 ; re-read the select pins
+	out x, NUM_SEL
+	jmp x!=y wait_deselected       ; hold the bus while still selected
+
 	mov osr, null                  ; load up 0s
-	out pindirs, DATA_WIDTH side 1 ; change D0-D7 back to inputs
+	out pindirs, DATA_WIDTH        ; change D0-D7 back to inputs
 .wrap
 
 % c-sdk {
-// Init the data pins as input so they start in Hi-Z state
+// Init the data pins as input so they start in Hi-Z state. The select pins are
+// listed so this SM lands in a GPIO window that can reach CTS_PIN -- the
+// program no longer names it in a "wait gpio", so used_gpio_ranges no longer
+// covers it.
 static const pin_range_t read_pins[] = {
   { D0_PIN, DATA_WIDTH, GPIO_IN },
+  { SCS_PIN, 3, GPIO_IN         },  // /SCS, IGNORE, /CTS
   {},
 };
 
@@ -150,13 +167,12 @@ void read_init_setup(sm_setup_t *setup)
   setup->program	    = &read_program;
   setup->get_default_config = read_program_get_default_config;
   setup->pins		    = read_pins;
-  setup->in_instr_base	    = -1;
+  setup->in_instr_base	    = SCS_PIN;
   setup->out_instr_base	    = D0_PIN;
   setup->out_count	    = DATA_WIDTH;
-  setup->sideset_base       = 31;
-  setup->sideset_count      = 1;
-  setup->sideset_opt        = true;
+  setup->sideset_base       = -1;
+  setup->sideset_count      = 0;
+  setup->sideset_opt        = false;
   setup->jmp_pin	    = -1;
 };
 %}
-
