@@ -37,8 +37,11 @@ all: $(BOARD)
 clean:
 	rm -rf build
 
+# Don't leave a truncated target behind when a recipe fails
+.DELETE_ON_ERROR:
+
 $(ROM_H): $(ROM_IMAGE) | $(BUILD_DIR)
-	xxd -i -n disk_rom $< > $@
+	defoogi xxd -i -n disk_rom $< > $@
 
 $(ROM_IMAGE): $(ROM_CFILES) $(ROM_AFILES)
 	defoogi make -C $(MSX_DIR)
