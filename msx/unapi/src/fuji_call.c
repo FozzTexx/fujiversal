@@ -54,6 +54,7 @@ typedef enum {
 
 #define TIMEOUT         milliseconds_to_jiffy(100)
 #define TIMEOUT_SLOW	milliseconds_to_jiffy(15 * 1000)
+#define DRAIN_IDLE_POLLS 64
 
 #define false 0
 #define true 1
@@ -122,6 +123,7 @@ static uint8_t fuji_packet_call(AtariSIODirection direction, fujibus_packet *pac
   uint8_t saved_slot, my_slot;
   uint8_t ck1, ck2;
   uint16_t rlen;
+  uint8_t idle;
   bool success = false;
   uint8_t pdev = packet_ptr->header.device;
   uint8_t aux_len = fuji_field_numbytes(packet_ptr->header.fields);
@@ -141,6 +143,11 @@ static uint8_t fuji_packet_call(AtariSIODirection direction, fujibus_packet *pac
   my_slot = msx_get_page_slot(1);
   saved_slot = msx_get_page_slot(2);
   msx_set_page_slot(2, my_slot);
+
+  // Drop a late reply to an earlier, timed-out call. Several empty polls in a
+  // row, since the adapter refills the port a byte at a time.
+  for (idle = 0; idle < DRAIN_IDLE_POLLS; )
+    idle = (port_getc() < 0) ? idle + 1 : 0;
 
   port_putc(SLIP_END);
   port_putbuf_slip(packet_ptr, aux_len + sizeof(packet_ptr->header));
