@@ -97,7 +97,7 @@ public:
     fujiCommandID_t command() const { return _command; }
 
     std::uint32_t param(unsigned int index) const {
-        return (index < _params.size()) ? _params[index].value : 0;
+        return _params[index].value;
     }
 
     unsigned int paramCount() const {
