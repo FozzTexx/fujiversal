@@ -137,7 +137,10 @@ wait_selected:
 	mov osr, ~null                 ; put a whole bunch of 1s in OSR
 	out pindirs, DATA_WIDTH        ; change D0-D7 to outputs
 
+	; Release only once E is low and we're deselected: the 6809
+	; latches read data on E's falling edge.
 wait_deselected:
+	jmp pin wait_deselected        ; E high
 	mov osr, ~pins                 ; re-read the select pins
 	out x, NUM_SEL
 	jmp x!=y wait_deselected       ; hold the bus while still selected
@@ -151,6 +154,7 @@ wait_deselected:
 static const pin_range_t read_pins[] = {
   { D0_PIN, DATA_WIDTH, GPIO_IN },
   { SCS_PIN, 3, GPIO_IN         },  // /SCS, IGNORE, /CTS
+  { CLOCK_PIN, 1, GPIO_IN       },
   {},
 };
 
@@ -165,6 +169,6 @@ void read_init_setup(sm_setup_t *setup)
   setup->sideset_base       = -1;
   setup->sideset_count      = 0;
   setup->sideset_opt        = false;
-  setup->jmp_pin	    = -1;
+  setup->jmp_pin	    = CLOCK_PIN;
 };
 %}
