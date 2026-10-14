@@ -407,6 +407,8 @@ void reset_bank_offsets()
     bank_offsets[i] = offset;
 }
 
+#define DBC_STREAM_ROM 0
+
 bool process_command(ByteBuffer &buffer)
 {
   static int user_rom_write_pos = -1;
@@ -423,27 +425,73 @@ bool process_command(ByteBuffer &buffer)
   switch (packet->command()) {
   case FUJICMD_OPEN:
     {
-      size_t offset = packet->param(0) * ROM_SEG_SIZE;
-      offset %= sizeof(user_rom);
-      user_rom_base = &user_rom[offset];
+      auto reply = [&](bool ok) { sendReplyPacket(packet->device(), ok, nullptr, 0); };
+
+      uint8_t stream_id;
+      uint32_t declared;
+      fujiROMType_t rt;
+
+      if (packet->data() && packet->data()->size() >= 6) {
+        // stream_id, size (32-bit little-endian), rom_type
+        const ByteBuffer &hdr = *packet->data();
+        stream_id = hdr[0];
+        declared  = (uint32_t)hdr[1] | ((uint32_t)hdr[2] << 8) |
+                    ((uint32_t)hdr[3] << 16) | ((uint32_t)hdr[4] << 24);
+        rt = (fujiROMType_t)hdr[5];
+      } else if (packet->paramCount() >= 1) {
+        // Older FujiNets and the CoCo send params instead of the header.
+        stream_id = DBC_STREAM_ROM;
+        declared  = 0;
+        rt = (packet->paramCount() >= 2) ? (fujiROMType_t)packet->param(1) : ROM_TYPE_UNKNOWN;
+      } else {
+        reply(false);
+        break;
+      }
+
+      if (rt == ROM_TYPE_UNKNOWN) {
+        // Senders with no mapper concept send 0, which would pick 8K banks.
+        rt = ROM_TYPE_MSX_PLAIN;
+      }
+
+      if (stream_id != DBC_STREAM_ROM) {
+        reply(false);
+        break;
+      }
+
+      if (declared != 0 && declared > sizeof(user_rom)) {
+        // 0 means the size is unknown, not empty.
+        reply(false);
+        break;
+      }
+
+      user_rom_base      = user_rom;
       user_rom_write_pos = 0;
-      user_rom_closed = false;
-      user_rom_type = (fujiROMType_t)packet->param(1);
-      bank_size = user_rom_type & 0x80 ? SIZE_16K : SIZE_8K;
+      user_rom_closed    = false;
+      user_rom_type      = rt;
+      bank_size          = (rt & 0x80) ? SIZE_16K : SIZE_8K;
       reset_bank_offsets();
-      sendReplyPacket(packet->device(), true, nullptr, 0);
+      reply(true);
 #if VERBOSE_DEBUG
-      DEBUG_PRINTF("Opening RAM at 0x%04x\n", offset);
+      DEBUG_PRINTF("Opening ROM: stream %d type 0x%02x declared %lu\n",
+                    stream_id, rt, (unsigned long)declared);
 #endif // VERBOSE_DEBUG
     }
     break;
 
   case FUJICMD_WRITE:
     {
-      if (user_rom_write_pos < 0 || !user_rom_base)
+      if (user_rom_write_pos < 0 || !user_rom_base || !packet->data()) {
         sendReplyPacket(packet->device(), false, nullptr, 0);
+        break;
+      }
 
-      size_t len = std::min(packet->data()->size(), sizeof(user_rom) - user_rom_write_pos);
+      size_t avail = sizeof(user_rom) - (size_t)user_rom_write_pos;
+      if (packet->data()->size() > avail) {
+        sendReplyPacket(packet->device(), false, nullptr, 0);
+        break;
+      }
+
+      size_t len = packet->data()->size();
 #if VERBOSE_DEBUG
       DEBUG_PRINTF("Writing %d bytes to 0x%04x\n", len, user_rom_write_pos);
 #endif // VERBOSE_DEBUG
@@ -457,21 +505,41 @@ bool process_command(ByteBuffer &buffer)
     break;
 
   case FUJICMD_CLOSE:
-    if (user_rom_write_pos < 0 || !user_rom_base)
-      sendReplyPacket(packet->device(), false, nullptr, 0);
-    if (user_rom_write_pos > 0)
-      user_rom_bank_count = (user_rom_write_pos + bank_size - 1) / bank_size;
-    if (user_rom_bank_count == 0)
-      user_rom_bank_count = 1;
-    user_rom_write_pos = -1;
-    user_rom_closed = true;
+    {
+      // Payload 0x01 aborts: a partial image must not be marked bootable.
+      bool aborted = packet->data() && !packet->data()->empty() &&
+                     (*packet->data())[0] == 0x01;
+
+      if (user_rom_write_pos < 0 || !user_rom_base) {
+        sendReplyPacket(packet->device(), false, nullptr, 0);
+        break;
+      }
+
+      if (aborted) {
+        user_rom_write_pos  = -1;
+        user_rom_base       = nullptr;
+        user_rom_closed     = false;
+        user_rom_bank_count = 1;
+        reset_bank_offsets();
+        sendReplyPacket(packet->device(), true, nullptr, 0);
+        break;
+      }
+
+      if (user_rom_write_pos > 0)
+        user_rom_bank_count = (user_rom_write_pos + bank_size - 1) / bank_size;
+      if (user_rom_bank_count == 0)
+        user_rom_bank_count = 1;
+      user_rom_write_pos = -1;
+      user_rom_closed = true;
 #if VERBOSE_DEBUG
-    DEBUG_PRINTF("Closing RAM %d\n", user_rom_closed);
+      DEBUG_PRINTF("Closing RAM %d\n", user_rom_closed);
 #endif // VERBOSE_DEBUG
-    sendReplyPacket(packet->device(), true, nullptr, 0);
+      sendReplyPacket(packet->device(), true, nullptr, 0);
+    }
     break;
 
   case FUJICMD_RESET:
+    // Sends no reply, so the FujiNet must not wait for an ACK.
     user_rom_write_pos = -1;
     user_rom_base = nullptr;
     user_rom_active = false;
@@ -481,7 +549,8 @@ bool process_command(ByteBuffer &buffer)
     break;
 
   default:
-    // FIXME - nak
+    // NAK so the FujiNet doesn't sit out its 500ms read timeout.
+    sendReplyPacket(packet->device(), false, nullptr, 0);
     break;
   }
 
