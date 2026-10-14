@@ -75,10 +75,12 @@ pio_sm_t state_machine[3];
 
 #define RING_SIZE 1024
 #define ring_append(buf, in, x) ({buf[in] = x; in = (in + 1) % sizeof(buf); })
+// Drops the byte if the ring is full: core1 can't be stalled, and waiting
+// here would starve the watchdog.
 #define check_tx() ({ \
       if (multicore_fifo_rvalid()) {                    \
         bus.combined = multicore_fifo_pop_blocking();   \
-        ring_append(ring_tx, ring_tx_in, bus.data);     \
+        tx_put(bus.data);                               \
       }                                                 \
     })
 
@@ -375,6 +377,59 @@ void __time_critical_func(romulan)(void)
   return;
 }
 
+// Replies share this ring with IO_PUTC bytes so a reply can't be sent in the
+// middle of a partly drained frame.
+unsigned char ring_tx[RING_SIZE];
+unsigned ring_tx_in = 0, ring_tx_out = 0;
+
+void tx_drain(void)
+{
+  if (ring_tx_in == ring_tx_out)
+    return;
+
+#ifdef USE_STDIO
+  putchar(ring_tx[ring_tx_out]);
+  ring_tx_out = (ring_tx_out + 1) % sizeof(ring_tx);
+#else
+  unsigned contig = (ring_tx_in > ring_tx_out)
+    ? (ring_tx_in - ring_tx_out)
+    : (sizeof(ring_tx) - ring_tx_out);
+
+  while (tud_cdc_write_available() < 1)
+    tud_task();
+
+  uint32_t room = tud_cdc_write_available();
+  uint32_t to_write = (contig < room) ? contig : room;
+  uint32_t written = tud_cdc_write(&ring_tx[ring_tx_out], to_write);
+  tud_cdc_write_flush();
+  ring_tx_out = (ring_tx_out + written) % sizeof(ring_tx);
+#endif // USE_STDIO
+}
+
+bool tx_put(uint8_t c)
+{
+  unsigned next = (ring_tx_in + 1) % sizeof(ring_tx);
+
+  if (next == ring_tx_out)
+    return false;
+
+  ring_tx[ring_tx_in] = c;
+  ring_tx_in = next;
+  return true;
+}
+
+// Waits for room rather than dropping: a truncated reply desyncs the link.
+void tx_enqueue(const uint8_t *data, size_t length)
+{
+  while (length--) {
+    while (!tx_put(*data)) {
+      tx_drain();
+      tud_task();
+    }
+    data++;
+  }
+}
+
 void sendReplyPacket(fujiDeviceID_t source, bool ack, void *data, size_t length)
 {
     FujiBusPacket packet(source, ack ? FUJICMD_ACK : FUJICMD_NAK,
@@ -384,15 +439,7 @@ void sendReplyPacket(fujiDeviceID_t source, bool ack, void *data, size_t length)
     DEBUG_PRINTF("Sending reply: dev:%02x cmd:%02x len:%04x\n",
            packet.device(), packet.command(), encoded.size());
 #endif // VERBOSE_DEBUG
-#ifdef USE_STDIO
-    fwrite(encoded.data(), 1, encoded.size(), stdout);
-    fflush(stdout);
-#else
-    tud_cdc_write(encoded.data(), (uint32_t) encoded.size());
-    tud_cdc_write_flush();
-    while (tud_cdc_write_available() < CFG_TUD_CDC_TX_BUFSIZE)
-      tud_task();
-#endif // USE_STDIO
+    tx_enqueue(encoded.data(), encoded.size());
 #if VERBOSE_DEBUG
     DEBUG_PRINTF("Sent\n");
 #endif // VERBOSE_DEBUG
@@ -493,9 +540,8 @@ int main()
   BusSignals bus;
   int input;
   unsigned int count = 0;
-  unsigned char ring_rx[RING_SIZE], ring_tx[RING_SIZE];
+  unsigned char ring_rx[RING_SIZE];
   unsigned ring_rx_in = 0, ring_rx_out = 0;
-  unsigned ring_tx_in = 0, ring_tx_out = 0;
   uint32_t last_cc_seen = 0, last_ring_sent = 0, now, loop_begin;
   bool our_command = false, serial_ready = false;
   ByteBuffer command_buf;
@@ -633,25 +679,8 @@ int main()
       }
     }
 
-    if (serial_ready && ring_tx_in != ring_tx_out) {
-#ifdef USE_STDIO
-      putchar(ring_tx[ring_tx_out]);
-      ring_tx_out = (ring_tx_out + 1) % sizeof(ring_tx);
-#else
-      unsigned contig = (ring_tx_in > ring_tx_out)
-        ? (ring_tx_in - ring_tx_out)
-        : (sizeof(ring_tx) - ring_tx_out);
-
-      while (tud_cdc_write_available() < 1)
-        tud_task();
-
-      uint32_t room = tud_cdc_write_available();
-      uint32_t to_write = (contig < room) ? contig : room;
-      uint32_t written = tud_cdc_write(&ring_tx[ring_tx_out], to_write);
-      tud_cdc_write_flush();
-      ring_tx_out = (ring_tx_out + written) % sizeof(ring_tx);
-#endif // USE_STDIO
-    }
+    if (serial_ready)
+      tx_drain();
   }
 
   return 0;
