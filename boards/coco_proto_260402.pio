@@ -127,11 +127,6 @@ void send_bus_init_setup(sm_setup_t *setup)
 
 	mov y, null                    ; y = 0, the "deselected" comparator
 .wrap_target
-wait_selected:
-	mov osr, ~pins                 ; read /SCS, IGNORE, /CTS inverted
-	out x, NUM_SEL                 ; x != 0 once either select is asserted
-	jmp !x wait_selected           ; spin while deselected
-
 	pull block                     ; get byte to write
 	out pins, DATA_WIDTH           ; write byte to GPIO D0-D7
 	mov osr, ~null                 ; put a whole bunch of 1s in OSR
@@ -141,7 +136,7 @@ wait_selected:
 	; latches read data on E's falling edge.
 wait_deselected:
 	jmp pin wait_deselected        ; E high
-	mov osr, ~pins                 ; re-read the select pins
+	mov osr, ~pins                 ; read the select pins
 	out x, NUM_SEL
 	jmp x!=y wait_deselected       ; hold the bus while still selected
 
