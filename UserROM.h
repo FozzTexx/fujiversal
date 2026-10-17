@@ -48,7 +48,6 @@ public:
       activate();
     return;
   }
-  void resetBankOffsets(void);
 
   inline bool isClosed(void) { return _writePos < 0; }
   inline bool isActive(void) { return activeBase != nullptr; }
@@ -58,6 +57,7 @@ public:
   std::array<uint32_t, ROM_MAX_SEGS> bankOffset;
   volatile uint16_t bankSize = ROM_SEG_SIZE;
   volatile uint16_t bankCount = 1;
+  void resetBankOffsets(void);
 };
 
 #endif /* USERROM_H */

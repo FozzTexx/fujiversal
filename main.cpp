@@ -430,10 +430,11 @@ bool process_command(ByteBuffer &buffer)
 
   case FUJICMD_RESET:
     user_rom.reset();
+    sendReplyPacket(packet->device(), true, nullptr, 0);
     break;
 
   default:
-    // FIXME - nak
+    sendReplyPacket(packet->device(), false, nullptr, 0);
     break;
   }
 
@@ -451,6 +452,7 @@ int main()
   uint32_t last_cc_seen = 0, last_ring_sent = 0, now, loop_begin;
   bool our_command = false, serial_ready = false;
   ByteBuffer command_buf;
+
 
   user_rom.resetBankOffsets();
 
