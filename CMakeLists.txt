@@ -25,6 +25,7 @@ pico_sdk_init()
 
 add_executable(${PROJECT_NAME}
     main.cpp
+    UserROM.cpp
     FujiBusPacket.cpp
     setup_sm.cpp
     diag_uart.cpp
