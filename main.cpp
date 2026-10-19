@@ -417,7 +417,8 @@ bool process_command(ByteBuffer &buffer)
     if (!packet->data().has_value())
       sendReplyPacket(packet->device(), false, nullptr, 0);
     else
-      sendReplyPacket(packet->device(), user_rom.write(packet->data().value()), nullptr, 0);
+      sendReplyPacket(packet->device(), user_rom.write(packet->data().value()).is_success(),
+                      nullptr, 0);
     break;
 
   case FUJICMD_CLOSE:

@@ -56,6 +56,7 @@ error_is_true UserROM::close(void)
 
 void UserROM::reset(void)
 {
+  deactivate();
   _writePos = _openSegment = -1;
   _selectedSegment = 0;
   bankCount = 1;
