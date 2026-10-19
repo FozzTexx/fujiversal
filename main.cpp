@@ -1,10 +1,10 @@
 #include "setup_sm.h"
 #include "board_defs.h"
 #include "UserROM.h"
+#include "Mapper.h"
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
-#include "fujiROMType.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -75,8 +75,8 @@ pio_sm_t state_machine[3];
       }                                                 \
     })
 
-
 UserROM user_rom;
+Mapper mapper;
 
 #ifdef BOARD_coco_proto_260402
 // Power-on-like Program Pak boot: on user-ROM enable we point rom_ptr at the
@@ -198,11 +198,13 @@ void setup_pio_irq_logic()
 void __time_critical_func(romulan)(void)
 {
   BusSignals bus;
-  uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(DEFAULT_ROM));
+  uint32_t rom_size = POW2_CEIL(sizeof(DEFAULT_ROM));
   uint8_t *rom_ptr = DEFAULT_ROM;
   uint32_t last_bus_state = -1;
+#ifdef OBSOLETE
   uint8_t bank = 0;
   bool switch_bank = false;
+#endif /* OBSOLETE */
 
   setup_pio_irq_logic();
 
@@ -282,6 +284,7 @@ void __time_critical_func(romulan)(void)
       }
     }
 #ifdef RD_PIN
+#ifdef OBSOLETE
     else if (bus.rd && user_rom.isActive() && (0x4000 <= bus.addr) && (bus.addr < 0xC000)) {
       switch_bank = false;
       switch (user_rom._type) {
@@ -323,14 +326,23 @@ void __time_critical_func(romulan)(void)
       if (switch_bank)
         user_rom.bankOffset[bank] = (bus.data % user_rom.bankCount) * user_rom.bankSize;
     }
+#else
+    else if (user_rom.isActive() && mapper.isRemap(bus)) {
+      mapper.remap(bus, user_rom);
+    }
+#endif /* OBSOLETE */
 #endif
     else if ((BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP)) {
+      unsigned rom_offset;
+
+
 #ifndef RD_PIN
       // No banking hardware: serve directly to keep the response path short
       rom_offset = bus.addr - BUS_ROM_BASE;
       bus.data = rom_ptr[rom_offset];
       pio_put_fifo(PSM_READ, bus.data);
 #else
+#ifdef OBSOLETE
       rom_offset = bus.addr;
 
       if (user_rom._type == ROM_TYPE_MSX_KONAMI) {
@@ -350,6 +362,10 @@ void __time_critical_func(romulan)(void)
       bank = rom_offset >> (12 + (user_rom.bankSize >> 13));
 
       bus.data = rom_ptr[rom_offset + user_rom.bankOffset[bank] - bank * user_rom.bankSize];
+#else
+      rom_offset = mapper.calculateOffset(bus, user_rom);
+      bus.data = rom_ptr[rom_offset % user_rom.segmentSize[user_rom.selectedSegment]];
+#endif /* OBSOLETE */
       pio_put_fifo(PSM_READ, bus.data);
 #endif // RD_PIN
     }
@@ -454,6 +470,7 @@ int main()
   ByteBuffer command_buf;
 
 
+  //mapper.resetOffsets();
   user_rom.resetBankOffsets();
 
   set_sys_clock_khz(250000, true);
