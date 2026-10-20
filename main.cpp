@@ -328,7 +328,7 @@ void __time_critical_func(romulan)(void)
     }
 #else
     else if (user_rom.isActive() && mapper.isRemap(bus)) {
-      mapper.remap(bus, user_rom);
+      mapper.remap(bus);
     }
 #endif /* OBSOLETE */
 #endif

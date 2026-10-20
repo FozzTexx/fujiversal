@@ -180,7 +180,7 @@ public:
   }
 
 #if 1 //def OBSOLETE
-  inline void remap(BusSignals bus, UserROM &user_rom) {
+  inline void remap(BusSignals bus) {
     bool switch_bank = false;
     uint8_t window = 0;
 
