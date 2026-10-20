@@ -13,7 +13,7 @@ public:
     uint8_t bank = 0;
 
 
-    switch (user_rom.romType) {
+    switch (user_rom._type) {
     case ROM_TYPE_MSX_ASCII8:
       if ((0x6000 <= bus.addr) && (bus.addr < 0x8000)) {
         // 0x6000 = 0, 0x6800 = 1, 0x7000 = 2, 0x7800 = 3
@@ -58,13 +58,13 @@ public:
     uint8_t bank;
 
 
-    if (user_rom.romType == ROM_TYPE_MSX_KONAMI) {
+    if (user_rom._type == ROM_TYPE_MSX_KONAMI) {
       // [0x0000, 0x4000) mirrors [0x4000, 0x8000)
       if (bus.addr < 0x4000) rom_offset += 0x4000;
       // [0xC000, 0x10000) mirrors [0x8000, 0xC000)
       else if (bus.addr >= 0xC000) rom_offset -= 0x4000;
     }
-    else if (user_rom.romType == ROM_TYPE_MSX_KONAMI_SCC) {
+    else if (user_rom._type == ROM_TYPE_MSX_KONAMI_SCC) {
       // [0x0000, 0x4000) mirrors [0xC000, 0x10000)
       if (bus.addr < 0x4000) rom_offset += 0x8000;
       // [0xC000, 0x10000) mirrors [0x4000, 0x8000)
