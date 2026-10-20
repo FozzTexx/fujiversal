@@ -417,11 +417,14 @@ bool process_command(ByteBuffer &buffer)
     if (packet->paramCount() < 1)
       sendReplyPacket(packet->device(), false, nullptr, 0);
     else {
+      user_rom.open(packet->param(0));
+
       fujiROMType_t type = ROM_TYPE_UNKNOWN;
       if (packet->paramCount() > 1)
         type = (fujiROMType_t) packet->param(1);
-      user_rom.open(packet->param(0), type);
-      user_rom.resetBankOffsets();
+      mapper.setROMType(type);
+      mapper.resetBankOffsets();
+
       sendReplyPacket(packet->device(), true, nullptr, 0);
 #if VERBOSE_DEBUG
       DEBUG_PRINTF("Opening RAM at 0x%04x\n", offset);
@@ -438,10 +441,15 @@ bool process_command(ByteBuffer &buffer)
     break;
 
   case FUJICMD_CLOSE:
-    sendReplyPacket(packet->device(), user_rom.close().is_success(), nullptr, 0);
+    {
+      size_t size = user_rom.close();
+      if (size > 0)
+        mapper.setROMSize(size);
+      sendReplyPacket(packet->device(), size > 0, nullptr, 0);
 #if VERBOSE_DEBUG
-    DEBUG_PRINTF("Closing RAM %d\n", user_rom.closed);
+      DEBUG_PRINTF("Closing RAM %d\n", user_rom.closed);
 #endif // VERBOSE_DEBUG
+    }
     break;
 
   case FUJICMD_RESET:
@@ -470,8 +478,7 @@ int main()
   ByteBuffer command_buf;
 
 
-  //mapper.resetOffsets();
-  user_rom.resetBankOffsets();
+  mapper.resetBankOffsets();
 
   set_sys_clock_khz(250000, true);
 

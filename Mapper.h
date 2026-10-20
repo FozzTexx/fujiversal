@@ -3,7 +3,33 @@
 
 class Mapper
 {
+private:
+  volatile fujiROMType_t _type = ROM_TYPE_UNKNOWN;
+  volatile uint16_t bankSize = ROM_SEG_SIZE;
+  volatile uint16_t bankCount = 1;
+  std::array<uint32_t, ROM_MAX_SEGS> bankOffset;
+
 public:
+  void setROMType(fujiROMType_t type) {
+    _type = type;
+    bankSize = _type & 0x80 ? SIZE_16K : SIZE_8K;
+    return;
+  }
+
+  void resetBankOffsets(void) {
+    unsigned idx, offset;
+
+
+    for (idx = offset = 0; idx < ROM_MAX_SEGS; idx++, offset += bankSize)
+      bankOffset[idx] = offset;
+    return;
+  }
+
+  void setROMSize(size_t size) {
+    bankCount = std::max<uint16_t>(1, (size + bankSize - 1) / bankSize);
+    return;
+  }
+
   inline bool isRemap(BusSignals bus) {
     return bus.rd && (0x4000 <= bus.addr) && (bus.addr < 0xC000);
   }
@@ -13,7 +39,7 @@ public:
     uint8_t bank = 0;
 
 
-    switch (user_rom._type) {
+    switch (_type) {
     case ROM_TYPE_MSX_ASCII8:
       if ((0x6000 <= bus.addr) && (bus.addr < 0x8000)) {
         // 0x6000 = 0, 0x6800 = 1, 0x7000 = 2, 0x7800 = 3
@@ -50,7 +76,7 @@ public:
       break;
     }
     if (switch_bank)
-      user_rom.bankOffset[bank] = (bus.data % user_rom.bankCount) * user_rom.bankSize;
+      bankOffset[bank] = (bus.data % bankCount) * bankSize;
   }
 
   inline unsigned calculateOffset(BusSignals bus, UserROM &user_rom) {
@@ -58,13 +84,13 @@ public:
     uint8_t bank;
 
 
-    if (user_rom._type == ROM_TYPE_MSX_KONAMI) {
+    if (_type == ROM_TYPE_MSX_KONAMI) {
       // [0x0000, 0x4000) mirrors [0x4000, 0x8000)
       if (bus.addr < 0x4000) rom_offset += 0x4000;
       // [0xC000, 0x10000) mirrors [0x8000, 0xC000)
       else if (bus.addr >= 0xC000) rom_offset -= 0x4000;
     }
-    else if (user_rom._type == ROM_TYPE_MSX_KONAMI_SCC) {
+    else if (_type == ROM_TYPE_MSX_KONAMI_SCC) {
       // [0x0000, 0x4000) mirrors [0xC000, 0x10000)
       if (bus.addr < 0x4000) rom_offset += 0x8000;
       // [0xC000, 0x10000) mirrors [0x4000, 0x8000)
@@ -72,9 +98,9 @@ public:
     }
 
     rom_offset -= BUS_ROM_BASE;
-    bank = rom_offset >> (12 + (user_rom.bankSize >> 13));
+    bank = rom_offset >> (12 + (bankSize >> 13));
 
-    return rom_offset + user_rom.bankOffset[bank] - bank * user_rom.bankSize;
+    return rom_offset + bankOffset[bank] - bank * bankSize;
   }
 };
 
