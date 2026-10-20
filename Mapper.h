@@ -1,9 +1,55 @@
 #ifndef MAPPER_H
 #define MAPPER_H
 
+#include "fujiROMType.h"
+
+#include <array>
+#include <vector>
+
+/*
+  ## How Mapping Works
+
+  Mapping is another name for bank switching. It allows a system to
+  access more data than can fit in the CPU's address space by dividing
+  that data into banks and making selected banks accessible through
+  windows in the address space.
+
+  A window is a range of CPU addresses that can be mapped to different
+  banks of data. By changing the selected bank, the same CPU addresses
+  can access different portions of the underlying data.
+
+  To describe a mapping, we need to know three things:
+
+  1. Window:   The CPU address range where a bank of data is accessible.
+  2. Register: The address used to select which bank is mapped into a window.
+  3. Bank:     The portion of the underlying data that we want to make
+               accessible through the window.
+
+  The window's address range is usually straightforward. Register
+  addresses, however, may have been chosen to simplify the hardware or
+  reduce its cost. As a result, the same register may be accessible at
+  multiple addresses.
+
+  Similarly, a window may be able to select any available bank, or
+  hardware restrictions may limit it to a specific subset of banks.
+
+  Another hardware quirk is that windows themselves may be mirrored at
+  multiple address ranges. This means the same underlying data can be
+  accessed through more than one range of CPU addresses.
+*/
+
 class Mapper
 {
 private:
+  struct MapperWindow {
+    uint32_t reg_base, reg_top;
+    uint32_t addr_base, addr_top;
+    uint8_t bank;
+  };
+
+  std::vector<MapperWindow> windows;
+  volatile unsigned registerBase, registerTop;
+
   volatile fujiROMType_t _type = ROM_TYPE_UNKNOWN;
   volatile uint16_t bankSize = ROM_SEG_SIZE;
   volatile uint16_t bankCount = 1;
@@ -13,6 +59,63 @@ public:
   void setROMType(fujiROMType_t type) {
     _type = type;
     bankSize = _type & 0x80 ? SIZE_16K : SIZE_8K;
+
+    resetWindows();
+    switch (type) {
+    case ROM_TYPE_MSX_ASCII8:
+      {
+        addWindow({
+          .reg_base   = 0x6000,
+          .reg_top    = 0x6800,
+          .addr_base  = 0x4000,
+          .addr_top   = 0x6000,
+        });
+        addWindow({
+          .reg_base   = 0x6800,
+          .reg_top    = 0x7000,
+          .addr_base  = 0x6000,
+          .addr_top   = 0x8000,
+        });
+        addWindow({
+          .reg_base   = 0x7000,
+          .reg_top    = 0x7800,
+          .addr_base  = 0x8000,
+          .addr_top   = 0xA000,
+        });
+        addWindow({
+          .reg_base   = 0x7800,
+          .reg_top    = 0x8000,
+          .addr_base  = 0xA000,
+          .addr_top   = 0xC000,
+        });
+      }
+      break;
+
+    case ROM_TYPE_MSX_ASCII16:
+      {
+        addWindow({
+          .reg_base   = 0x6000,
+          .reg_top    = 0x7000,
+          .addr_base  = 0x4000,
+          .addr_top   = 0x8000,
+        });
+        addWindow({
+          .reg_base   = 0x7000,
+          .reg_top    = 0x8000,
+          .addr_base  = 0x8000,
+          .addr_top   = 0xC000,
+        });
+      }
+      break;
+
+    case ROM_TYPE_MSX_KONAMI:
+    case ROM_TYPE_MSX_KONAMI_SCC:
+    default:
+      break;
+    }
+
+    resetBankOffsets();
+
     return;
   }
 
@@ -30,8 +133,36 @@ public:
     return;
   }
 
+  void resetWindows(void) {
+    windows.clear();
+    return;
+  }
+
+  void addWindow(MapperWindow window) {
+    // FIXME - keep windows sorted by addr_base;
+    windows.push_back(window);
+
+    registerBase = windows[0].reg_base;
+    registerTop = windows[0].reg_top;
+    for (size_t idx = 1; idx < windows.size(); idx++) {
+      if (windows[idx].reg_base < registerBase)
+        registerBase = windows[idx].reg_base;
+      if (windows[idx].reg_top > registerTop)
+        registerTop = windows[idx].reg_top;
+    }
+    return;
+  }
+
+  static inline bool isWrite(BusSignals bus) {
+    return bus.rd;
+  }
+
   inline bool isRemap(BusSignals bus) {
-    return bus.rd && (0x4000 <= bus.addr) && (bus.addr < 0xC000);
+#ifdef OBSOLETE
+    return isWrite(bus) && (0x4000 <= bus.addr) && (bus.addr < 0xC000);
+#else
+    return isWrite(bus) && registerBase <= bus.addr && bus.addr < registerTop;
+#endif /* OBSOLETE */
   }
 
   inline void remap(BusSignals bus, UserROM &user_rom) {
