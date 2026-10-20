@@ -231,7 +231,8 @@ public:
     rom_offset -= BUS_ROM_BASE;
     bank = rom_offset >> (12 + (bankSize >> 13));
 
-    return rom_offset + bankOffset[bank] - bank * bankSize;
+    return (rom_offset + bankOffset[bank] - bank * bankSize)
+      % user_rom._segmentSize[user_rom._selectedSegment];
   }
 };
 
