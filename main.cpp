@@ -364,7 +364,7 @@ void __time_critical_func(romulan)(void)
       bus.data = rom_ptr[rom_offset + user_rom.bankOffset[bank] - bank * user_rom.bankSize];
 #else
       rom_offset = mapper.calculateOffset(bus, user_rom);
-      bus.data = rom_ptr[rom_offset % user_rom._segmentSize[user_rom._selectedSegment]];
+      bus.data = rom_ptr[rom_offset];
 #endif /* OBSOLETE */
       pio_put_fifo(PSM_READ, bus.data);
 #endif // RD_PIN
