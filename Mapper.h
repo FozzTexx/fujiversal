@@ -38,22 +38,24 @@
   accessed through more than one range of CPU addresses.
 */
 
+#define MAX_WINDOWS 8
+
 class Mapper
 {
 private:
   struct MapperWindow {
     uint32_t reg_base, reg_top;
     uint32_t addr_base, addr_top;
-    uint8_t bank;
+    uint32_t offset;
   };
 
-  std::vector<MapperWindow> windows;
+  std::array<MapperWindow, MAX_WINDOWS> windows; // std::vector is too slow
+  unsigned windowCount = 0;
   volatile unsigned registerBase, registerTop;
 
   volatile fujiROMType_t _type = ROM_TYPE_UNKNOWN;
   volatile uint16_t bankSize = ROM_SEG_SIZE;
   volatile uint16_t bankCount = 1;
-  std::array<uint32_t, ROM_MAX_SEGS> bankOffset;
 
 public:
   void setROMType(fujiROMType_t type) {
@@ -123,15 +125,8 @@ public:
     unsigned idx, offset;
 
 
-#ifdef USE_BANKOFFSET
-    for (idx = offset = 0; idx < ROM_MAX_SEGS; idx++, offset += bankSize)
-      bankOffset[idx] = offset;
-#else
-    for (idx = offset = 0; idx < windows.size(); idx++, offset += bankSize) {
-      bankOffset[idx] = offset;
-      windows[idx].bank = offset;
-    }
-#endif /* USE_BANKOFFSET */
+    for (idx = offset = 0; idx < windows.size(); idx++, offset += bankSize)
+      windows[idx].offset = offset;
 
     return;
   }
@@ -142,17 +137,19 @@ public:
   }
 
   void resetWindows(void) {
-    windows.clear();
+    windows.fill({});
+    windowCount = 0;
     return;
   }
 
   void addWindow(MapperWindow window) {
-    // FIXME - keep windows sorted by addr_base;
-    windows.push_back(window);
+    // FIXME - keep windows sorted by addr_base
+    windows[windowCount] = window;
+    windowCount++;
 
     registerBase = windows[0].reg_base;
     registerTop = windows[0].reg_top;
-    for (size_t idx = 1; idx < windows.size(); idx++) {
+    for (size_t idx = 1; idx < windowCount; idx++) {
       if (windows[idx].reg_base < registerBase)
         registerBase = windows[idx].reg_base;
       if (windows[idx].reg_top > registerTop)
@@ -215,10 +212,8 @@ public:
     default:
       break;
     }
-    if (switch_bank) {
-      bankOffset[window] = (bus.data % bankCount) * bankSize;
-      //windows[window].bank = (bus.data % bankCount) * bankSize;
-    }
+    if (switch_bank)
+      windows[window].offset = (bus.data % bankCount) * bankSize;
   }
 #else
   inline void remap(BusSignals bus) {
@@ -258,12 +253,7 @@ public:
 
     if (user_rom.isActive()) {
       window = rom_offset >> (12 + (bankSize >> 13));
-
-#if 1 //def USE_BANKOFFSET
-      rom_offset += bankOffset[window] - window * bankSize;
-#else
-      rom_offset += windows[window].bank - window * bankSize;
-#endif /* USE_BANKOFFSET */
+      rom_offset += windows[window].offset - window * bankSize;
     }
 
     return rom_offset % user_rom._segmentSize[user_rom._selectedSegment];
