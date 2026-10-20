@@ -428,7 +428,8 @@ bool process_command(ByteBuffer &buffer)
       user_rom_base = &user_rom[offset];
       user_rom_write_pos = 0;
       user_rom_closed = false;
-      user_rom_type = (fujiROMType_t)packet->param(1);
+      user_rom_type = packet->paramCount() > 1
+        ? (fujiROMType_t)packet->param(1) : ROM_TYPE_UNKNOWN;
       bank_size = user_rom_type & 0x80 ? SIZE_16K : SIZE_8K;
       reset_bank_offsets();
       sendReplyPacket(packet->device(), true, nullptr, 0);

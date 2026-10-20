@@ -232,8 +232,8 @@ ByteBuffer FujiBusPacket::serialize() const
 {
     fujibus_header hdr, *hptr;
 
-    hdr.device = _device;
-    hdr.command = _command;
+    hdr.device = static_cast<uint8_t>(_device);
+    hdr.command = static_cast<uint8_t>(_command);
     hdr.length = sizeof(hdr);
     hdr.checksum = 0;
     hdr.descr = 0;
