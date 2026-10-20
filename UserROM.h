@@ -31,9 +31,17 @@ public:
   unsigned _selectedSegment = 0;
   size_t _segmentSize[ROM_MAX_SEGS] {};
 
+#ifdef OBSOLETE
   void open(unsigned seg, fujiROMType_t type);
+#else
+  void open(unsigned seg);
+#endif /* OBSOLETE */
   error_is_true write(const ByteBuffer &data);
+#ifdef OBSOLETE
   error_is_true close(void);
+  #else
+  size_t close(void);
+#endif /* OBSOLETE */
   void reset(void);
 
   inline void activate(void) {
@@ -54,12 +62,14 @@ public:
   inline bool isClosed(void) { return _writePos < 0; }
   inline bool isActive(void) { return activeBase != nullptr; }
 
+#ifdef OBSOLETE
   // Mapper things
   volatile fujiROMType_t _type = ROM_TYPE_UNKNOWN;
   std::array<uint32_t, ROM_MAX_SEGS> bankOffset;
   volatile uint16_t bankSize = ROM_SEG_SIZE;
   volatile uint16_t bankCount = 1;
   void resetBankOffsets(void);
+#endif /* OBSOLETE */
 };
 
 #endif /* USERROM_H */
