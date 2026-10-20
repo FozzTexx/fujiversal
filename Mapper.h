@@ -46,7 +46,11 @@ private:
   struct MapperWindow {
     uint32_t reg_base, reg_top;
     uint32_t addr_base, addr_top;
+#ifdef OBSOLETE
     uint32_t offset;
+#else
+    uint8_t bank;
+#endif /* OBSOLETE */
   };
 
   std::array<MapperWindow, MAX_WINDOWS> windows; // std::vector is too slow
@@ -54,13 +58,13 @@ private:
   volatile unsigned registerBase, registerTop;
 
   volatile fujiROMType_t _type = ROM_TYPE_UNKNOWN;
-  volatile uint16_t bankSize = ROM_SEG_SIZE;
+  volatile uint16_t windowSize = ROM_SEG_SIZE;
   volatile uint16_t bankCount = 1;
 
 public:
   void setROMType(fujiROMType_t type) {
     _type = type;
-    bankSize = _type & 0x80 ? SIZE_16K : SIZE_8K;
+    windowSize = _type & 0x80 ? SIZE_16K : SIZE_8K;
 
     resetWindows();
     switch (type) {
@@ -125,14 +129,19 @@ public:
     unsigned idx, offset;
 
 
-    for (idx = offset = 0; idx < windows.size(); idx++, offset += bankSize)
+#ifdef OBSOLETE
+    for (idx = offset = 0; idx < windows.size(); idx++, offset += windowSize)
       windows[idx].offset = offset;
+#else
+    for (idx = offset = 0; idx < windows.size(); idx++)
+      windows[idx].bank = idx;
+#endif /* OBSOLETE */
 
     return;
   }
 
   void setROMSize(size_t size) {
-    bankCount = std::max<uint16_t>(1, (size + bankSize - 1) / bankSize);
+    bankCount = std::max<uint16_t>(1, (size + windowSize - 1) / windowSize);
     return;
   }
 
@@ -212,8 +221,13 @@ public:
     default:
       break;
     }
+#ifdef OBSOLETE
     if (switch_bank)
-      windows[window].offset = (bus.data % bankCount) * bankSize;
+      windows[window].offset = (bus.data % bankCount) * windowSize;
+#else
+    if (switch_bank)
+      windows[window].bank = bus.data % bankCount;
+#endif /* OBSOLETE */
   }
 #else
   inline void remap(BusSignals bus) {
@@ -252,8 +266,12 @@ public:
     rom_offset -= BUS_ROM_BASE;
 
     if (user_rom.isActive()) {
-      window = rom_offset >> (12 + (bankSize >> 13));
-      rom_offset += windows[window].offset - window * bankSize;
+      window = rom_offset >> (12 + (windowSize >> 13));
+#ifdef OBSOLETE
+      rom_offset += windows[window].offset - window * windowSize;
+#else
+      rom_offset += windows[window].bank * windowSize - window * windowSize;
+#endif /* OBSOLETE */
     }
 
     return rom_offset % user_rom._segmentSize[user_rom._selectedSegment];
