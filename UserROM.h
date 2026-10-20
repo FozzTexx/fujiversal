@@ -22,12 +22,14 @@ class UserROM
 {
 private:
   uint8_t _romData[ROM_MAX_SEGS * ROM_SEG_SIZE];
-  size_t _segmentSize[ROM_MAX_SEGS] {};
   int _writePos = -1, _openSegment = -1;
-  unsigned _selectedSegment = 0;
 
 public:
   uint8_t *activeBase = nullptr;
+
+  // FIXME - should be private
+  unsigned _selectedSegment = 0;
+  size_t _segmentSize[ROM_MAX_SEGS] {};
 
   void open(unsigned seg, fujiROMType_t type);
   error_is_true write(const ByteBuffer &data);
