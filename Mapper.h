@@ -75,9 +75,11 @@ public:
     _type = type;
 
 
+#ifdef FORCED_ROM_TYPE
     /*****************************/
-    _type = ROM_TYPE_MSX_KONAMI;    // FIXME - HACK TO DEAL WITH TEST ROMS
+    _type = FORCED_ROM_TYPE;
     /*****************************/
+#endif /* FORCED_ROM_TYPE */
 
 
     resetWindows();
@@ -157,18 +159,57 @@ public:
 
         addMirror({
             .mirror_base = 0x0000,
-            .mirror_top = 0x2000,
-            .source = 0x4000,
+            .mirror_top  = 0x2000,
+            .source      = 0x4000,
           });
         addMirror({
             .mirror_base = 0xC000,
-            .mirror_top = 0x10000,
-            .source = 0x8000,
+            .mirror_top  = 0x10000,
+            .source      = 0x8000,
           });
       }
       break;
 
     case ROM_TYPE_MSX_KONAMI_SCC:
+      {
+        addWindow({
+            .reg_base    = 0x5000,
+            .reg_top     = 0x5800,
+            .window_base = 0x4000,
+            .window_top  = 0x6000,
+          });
+        addWindow({
+            .reg_base    = 0x7000,
+            .reg_top     = 0x7800,
+            .window_base = 0x6000,
+            .window_top  = 0x8000,
+          });
+        addWindow({
+            .reg_base    = 0x9000,
+            .reg_top     = 0x9800,
+            .window_base = 0x8000,
+            .window_top  = 0xA000,
+          });
+        addWindow({
+            .reg_base    = 0xB000,
+            .reg_top     = 0xB800,
+            .window_base = 0xA000,
+            .window_top  = 0xC000,
+          });
+
+        addMirror({
+            .mirror_base = 0x0000,
+            .mirror_top  = 0x4000,
+            .source      = 0x8000,
+          });
+        addMirror({
+            .mirror_base = 0xC000,
+            .mirror_top  = 0x10000,
+            .source      = 0x4000,
+          });
+      }
+      break;
+
     default:
       break;
     }
@@ -264,7 +305,7 @@ public:
 
   inline unsigned mirrored(unsigned addr) {
     for (unsigned idx = 0; idx < mirrorCount; idx++) {
-      if (mirrors[idx].mirror_base <= addr && addr <= mirrors[idx].mirror_top)
+      if (mirrors[idx].mirror_base <= addr && addr < mirrors[idx].mirror_top)
         return addr + mirrors[idx].source - mirrors[idx].mirror_base;
     }
     return addr;
