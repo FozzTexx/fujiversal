@@ -46,6 +46,7 @@ private:
   struct MapperWindow {
     uint32_t reg_base, reg_top;
     uint32_t window_base, window_top;
+    uint8_t mirror;
     uint8_t bank;
   };
 
@@ -65,7 +66,7 @@ public:
 
 
     /*****************************/
-    _type = ROM_TYPE_MSX_ASCII16;    // FIXME - HACK TO DEAL WITH TEST ROMS
+    _type = ROM_TYPE_MSX_KONAMI;    // FIXME - HACK TO DEAL WITH TEST ROMS
     /*****************************/
 
 
@@ -74,50 +75,78 @@ public:
     case ROM_TYPE_MSX_ASCII8:
       {
         addWindow({
-          .reg_base    = 0x6000,
-          .reg_top     = 0x6800,
-          .window_base = 0x4000,
-          .window_top  = 0x6000,
-        });
+            .reg_base    = 0x6000,
+            .reg_top     = 0x6800,
+            .window_base = 0x4000,
+            .window_top  = 0x6000,
+          });
         addWindow({
-          .reg_base    = 0x6800,
-          .reg_top     = 0x7000,
-          .window_base = 0x6000,
-          .window_top  = 0x8000,
-        });
+            .reg_base    = 0x6800,
+            .reg_top     = 0x7000,
+            .window_base = 0x6000,
+            .window_top  = 0x8000,
+          });
         addWindow({
-          .reg_base    = 0x7000,
-          .reg_top     = 0x7800,
-          .window_base = 0x8000,
-          .window_top  = 0xA000,
-        });
+            .reg_base    = 0x7000,
+            .reg_top     = 0x7800,
+            .window_base = 0x8000,
+            .window_top  = 0xA000,
+          });
         addWindow({
-          .reg_base    = 0x7800,
-          .reg_top     = 0x8000,
-          .window_base = 0xA000,
-          .window_top  = 0xC000,
-        });
+            .reg_base    = 0x7800,
+            .reg_top     = 0x8000,
+            .window_base = 0xA000,
+            .window_top  = 0xC000,
+          });
       }
       break;
 
     case ROM_TYPE_MSX_ASCII16:
       {
         addWindow({
-          .reg_base    = 0x6000,
-          .reg_top     = 0x6800,
-          .window_base = 0x4000,
-          .window_top  = 0x8000,
-        });
+            .reg_base    = 0x6000,
+            .reg_top     = 0x6800,
+            .window_base = 0x4000,
+            .window_top  = 0x8000,
+          });
         addWindow({
-          .reg_base    = 0x7000,
-          .reg_top     = 0x7800,
-          .window_base = 0x8000,
-          .window_top  = 0xC000,
-        });
+            .reg_base    = 0x7000,
+            .reg_top     = 0x7800,
+            .window_base = 0x8000,
+            .window_top  = 0xC000,
+          });
       }
       break;
 
     case ROM_TYPE_MSX_KONAMI:
+      {
+        addWindow({
+            .reg_base = 0,
+            .reg_top = 0,
+            .window_base = 0x4000,
+            .window_top = 0x6000,
+          });
+        addWindow({
+            .reg_base = 0x6000,
+            .reg_top = 0x8000,
+            .window_base = 0x6000,
+            .window_top = 0x8000,
+          });
+        addWindow({
+            .reg_base = 0x8000,
+            .reg_top = 0xA000,
+            .window_base = 0x8000,
+            .window_top = 0xA000,
+          });
+        addWindow({
+            .reg_base = 0xA000,
+            .reg_top = 0xC000,
+            .window_base = 0xA000,
+            .window_top = 0xC000,
+          });
+      }
+      break;
+
     case ROM_TYPE_MSX_KONAMI_SCC:
     default:
       break;
@@ -193,7 +222,7 @@ public:
   }
 
   inline int selectedWindow(BusSignals bus) {
-    unsigned rom_offset = bus.addr - BUS_ROM_BASE;
+    unsigned rom_offset = bus.addr - windowBase;
     return (rom_offset >> windowShift) & (windowCount - 1);
   }
 
@@ -205,11 +234,14 @@ public:
   }
 
   inline unsigned calculateOffset(BusSignals bus, UserROM &user_rom) {
-    unsigned rom_offset = bus.addr - BUS_ROM_BASE;
+    unsigned rom_offset = bus.addr;
     if (user_rom.isActive()) { // && isWindow(bus)) {
       int window = selectedWindow(bus);
       rom_offset += (windows[window].bank - window) * windowSize;
+      rom_offset -= windowBase;
     }
+    else
+      rom_offset -= BUS_ROM_BASE;
     return rom_offset;
   }
 };
