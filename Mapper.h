@@ -64,7 +64,7 @@ public:
     _type = type;
 
     resetWindows();
-    switch (type) {
+    switch (_type) {
     case ROM_TYPE_MSX_ASCII8:
       {
         addWindow({
@@ -98,13 +98,13 @@ public:
       {
         addWindow({
           .reg_base    = 0x6000,
-          .reg_top     = 0x7000,
+          .reg_top     = 0x6800,
           .window_base = 0x4000,
           .window_top  = 0x8000,
         });
         addWindow({
           .reg_base    = 0x7000,
-          .reg_top     = 0x8000,
+          .reg_top     = 0x7800,
           .window_base = 0x8000,
           .window_top  = 0xC000,
         });
@@ -190,22 +190,11 @@ public:
     return nullptr;
   }
 
-#ifdef OBSOLETE
-  inline int selectedWindow(BusSignals bus) {
-    for (unsigned idx = 0; idx < windowCount; idx++) {
-      if (windows[idx].window_base <= bus.addr && bus.addr < windows[idx].window_top)
-        return idx;
-    }
-
-    return -1;
-  }
-#else
   inline int selectedWindow(BusSignals bus) {
     unsigned rom_offset = bus.addr - BUS_ROM_BASE;
     //return rom_offset >> (12 + (windowSize >> 13));
     return (rom_offset >> windowShift) & (windowCount - 1);
   }
-#endif /* OBSOLETE */
 
   inline void remap(BusSignals bus) {
     MapperWindow *window = selectedRegister(bus);
@@ -214,37 +203,6 @@ public:
     return;
   }
 
-#if 0 //def OBSOLETE
-  inline unsigned calculateOffset(BusSignals bus, UserROM &user_rom) {
-    unsigned rom_offset = bus.addr;
-    uint8_t window;
-
-
-    if (user_rom.isActive()) {
-      if (_type == ROM_TYPE_MSX_KONAMI) {
-        // [0x0000, 0x4000) mirrors [0x4000, 0x8000)
-        if (bus.addr < 0x4000) rom_offset += 0x4000;
-        // [0xC000, 0x10000) mirrors [0x8000, 0xC000)
-        else if (bus.addr >= 0xC000) rom_offset -= 0x4000;
-      }
-      else if (_type == ROM_TYPE_MSX_KONAMI_SCC) {
-        // [0x0000, 0x4000) mirrors [0xC000, 0x10000)
-        if (bus.addr < 0x4000) rom_offset += 0x8000;
-        // [0xC000, 0x10000) mirrors [0x4000, 0x8000)
-        else if (bus.addr >= 0xC000) rom_offset -= 0x8000;
-      }
-    }
-
-    rom_offset -= BUS_ROM_BASE;
-
-    if (user_rom.isActive()) {
-      window = rom_offset >> (12 + (windowSize >> 13));
-      rom_offset += (windows[window].bank - window) * windowSize;
-    }
-
-    return rom_offset % user_rom._segmentSize[user_rom._selectedSegment];
-  }
-#else
   inline unsigned calculateOffset(BusSignals bus, UserROM &user_rom) {
     unsigned rom_offset = bus.addr - BUS_ROM_BASE;
     if (user_rom.isActive()) { // && isWindow(bus)) {
@@ -253,7 +211,6 @@ public:
     }
     return rom_offset;
   }
-#endif /* OBSOLETE */
 };
 
 #endif /* MAPPER_H */
