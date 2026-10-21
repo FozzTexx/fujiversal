@@ -252,6 +252,7 @@ void __time_critical_func(romulan)(void)
           // Enable/disable user ROM
           if (bus.data & IO_FLAG_USERROM_ENABLE) {
             user_rom.activate();
+            mapper.activate();
             rom_ptr = user_rom.activeBase;
             if (bus.data & IO_FLAG_AUTOSTART_ENABLE) {
 #ifdef BOARD_coco_proto_260402
@@ -354,7 +355,6 @@ bool process_command(ByteBuffer &buffer)
       if (packet->paramCount() > 1)
         type = (fujiROMType_t) packet->param(1);
       mapper.setROMType(type);
-      mapper.resetBankOffsets();
 
       sendReplyPacket(packet->device(), true, nullptr, 0);
 #if VERBOSE_DEBUG
@@ -408,8 +408,6 @@ int main()
   bool our_command = false, serial_ready = false;
   ByteBuffer command_buf;
 
-
-  mapper.resetBankOffsets();
 
   set_sys_clock_khz(250000, true);
 

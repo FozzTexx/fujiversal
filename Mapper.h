@@ -50,14 +50,14 @@ private:
   };
 
   std::array<MapperWindow, MAX_WINDOWS> windows; // std::vector is too slow
-  volatile unsigned windowCount = 0;
-  volatile unsigned windowBase, windowTop;
-  volatile unsigned registerBase, registerTop;
+  unsigned windowCount = 0;
+  unsigned windowBase = 0, windowTop = 0;
+  unsigned registerBase = 0, registerTop = 0;
 
-  volatile fujiROMType_t _type = ROM_TYPE_UNKNOWN;
-  volatile uint16_t windowSize = ROM_SEG_SIZE;
-  volatile uint16_t windowShift;
-  volatile uint16_t bankCount = 1;
+  fujiROMType_t _type = ROM_TYPE_UNKNOWN;
+  uint16_t windowSize = ROM_SEG_SIZE;
+  uint16_t windowShift = __builtin_ctz(ROM_SEG_SIZE);
+  uint16_t bankCount = 1;
 
 public:
   void setROMType(fujiROMType_t type) {
@@ -123,18 +123,6 @@ public:
       break;
     }
 
-    resetBankOffsets();
-
-    return;
-  }
-
-  void resetBankOffsets(void) {
-    unsigned idx, offset;
-
-
-    for (idx = offset = 0; idx < windows.size(); idx++)
-      windows[idx].bank = idx;
-
     return;
   }
 
@@ -173,6 +161,16 @@ public:
     return;
   }
 
+  // Called by the bus loop when the user ROM is switched on. The barrier
+  // stops the compiler from using values it loaded before core 0 set up
+  // the mapper, which it would otherwise be free to hoist out of the loop.
+  inline void activate(void) {
+    __compiler_memory_barrier();
+    for (unsigned idx = 0; idx < windowCount; idx++)
+      windows[idx].bank = idx;
+    return;
+  }
+
   static inline bool isWrite(BusSignals bus) {
     return bus.rd;
   }
@@ -186,11 +184,6 @@ public:
   }
 
   inline MapperWindow *selectedRegister(BusSignals bus) {
-#ifdef UNUSED
-    if (0x6800 <= bus.addr && bus.addr < 0x7000)
-      return nullptr;
-#endif /* UNUSED */
-
     for (unsigned idx = 0; idx < windowCount; idx++) {
       if (windows[idx].reg_base <= bus.addr && bus.addr < windows[idx].reg_top)
         return &windows[idx];
@@ -201,7 +194,6 @@ public:
 
   inline int selectedWindow(BusSignals bus) {
     unsigned rom_offset = bus.addr - BUS_ROM_BASE;
-    //return rom_offset >> (12 + (windowSize >> 13));
     return (rom_offset >> windowShift) & (windowCount - 1);
   }
 
