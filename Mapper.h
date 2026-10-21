@@ -50,15 +50,25 @@ private:
     uint8_t bank;
   };
 
+  struct MapperMirror {
+    uint32_t mirror_base, mirror_top;
+    uint32_t source;
+  };
+
   std::array<MapperWindow, MAX_WINDOWS> windows; // std::vector is too slow
   unsigned windowCount = 0;
   unsigned windowBase = 0, windowTop = 0;
-  unsigned registerBase = 0, registerTop = 0;
-
-  fujiROMType_t _type = ROM_TYPE_UNKNOWN;
   uint16_t windowSize = ROM_SEG_SIZE;
   uint16_t windowShift = __builtin_ctz(ROM_SEG_SIZE);
+
+  std::array<MapperMirror, MAX_WINDOWS> mirrors;
+  unsigned mirrorCount = 0;
+
+  unsigned registerBase = 0, registerTop = 0;
+
   uint16_t bankCount = 1;
+
+  fujiROMType_t _type = ROM_TYPE_UNKNOWN;
 
 public:
   void setROMType(fujiROMType_t type) {
@@ -121,28 +131,39 @@ public:
     case ROM_TYPE_MSX_KONAMI:
       {
         addWindow({
-            .reg_base = 0,
-            .reg_top = 0,
+            .reg_base    = 0,
+            .reg_top     = 0,
             .window_base = 0x4000,
-            .window_top = 0x6000,
+            .window_top  = 0x6000,
           });
         addWindow({
-            .reg_base = 0x6000,
-            .reg_top = 0x8000,
+            .reg_base    = 0x6000,
+            .reg_top     = 0x8000,
             .window_base = 0x6000,
-            .window_top = 0x8000,
+            .window_top  = 0x8000,
           });
         addWindow({
-            .reg_base = 0x8000,
-            .reg_top = 0xA000,
+            .reg_base    = 0x8000,
+            .reg_top     = 0xA000,
             .window_base = 0x8000,
-            .window_top = 0xA000,
+            .window_top  = 0xA000,
           });
         addWindow({
-            .reg_base = 0xA000,
-            .reg_top = 0xC000,
+            .reg_base    = 0xA000,
+            .reg_top     = 0xC000,
             .window_base = 0xA000,
-            .window_top = 0xC000,
+            .window_top  = 0xC000,
+          });
+
+        addMirror({
+            .mirror_base = 0x0000,
+            .mirror_top = 0x2000,
+            .source = 0x4000,
+          });
+        addMirror({
+            .mirror_base = 0xC000,
+            .mirror_top = 0x10000,
+            .source = 0x8000,
           });
       }
       break;
@@ -163,6 +184,7 @@ public:
   void resetWindows(void) {
     windows.fill({});
     windowCount = 0;
+    mirrorCount = 0;
     return;
   }
 
@@ -187,6 +209,13 @@ public:
       if (windows[idx].window_top > windowTop)
         windowTop = windows[idx].window_top;
     }
+    return;
+  }
+
+  void addMirror(MapperMirror mirror) {
+    // FIXME - keep mirrors sorted by mirror_base
+    mirrors[mirrorCount] = mirror;
+    mirrorCount += 1;
     return;
   }
 
@@ -221,8 +250,8 @@ public:
     return nullptr;
   }
 
-  inline int selectedWindow(BusSignals bus) {
-    unsigned rom_offset = bus.addr - windowBase;
+  inline int selectedWindow(unsigned addr) {
+    unsigned rom_offset = addr - windowBase;
     return (rom_offset >> windowShift) & (windowCount - 1);
   }
 
@@ -233,10 +262,19 @@ public:
     return;
   }
 
+  inline unsigned mirrored(unsigned addr) {
+    for (unsigned idx = 0; idx < mirrorCount; idx++) {
+      if (mirrors[idx].mirror_base <= addr && addr <= mirrors[idx].mirror_top)
+        return addr + mirrors[idx].source - mirrors[idx].mirror_base;
+    }
+    return addr;
+  }
+
   inline unsigned calculateOffset(BusSignals bus, UserROM &user_rom) {
     unsigned rom_offset = bus.addr;
-    if (user_rom.isActive()) { // && isWindow(bus)) {
-      int window = selectedWindow(bus);
+    if (user_rom.isActive()) {
+      rom_offset = mirrored(rom_offset);
+      int window = selectedWindow(rom_offset);
       rom_offset += (windows[window].bank - window) * windowSize;
       rom_offset -= windowBase;
     }
