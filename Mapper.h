@@ -56,12 +56,18 @@ private:
 
   volatile fujiROMType_t _type = ROM_TYPE_UNKNOWN;
   volatile uint16_t windowSize = ROM_SEG_SIZE;
-  volatile uint16_t windowShift, regShift;
+  volatile uint16_t windowShift;
   volatile uint16_t bankCount = 1;
 
 public:
   void setROMType(fujiROMType_t type) {
     _type = type;
+
+
+    /*****************************/
+    _type = ROM_TYPE_MSX_ASCII16;    // FIXME - HACK TO DEAL WITH TEST ROMS
+    /*****************************/
+
 
     resetWindows();
     switch (_type) {
@@ -147,8 +153,6 @@ public:
     // FIXME - keep windows sorted by window_base
     windows[windowCount] = window;
     windowCount += 1;
-    regShift = __builtin_ctz((windows[windowCount].reg_top - windows[0].reg_base)
-                             / windowCount);
     windowSize = windows[0].window_top - windows[0].window_base;
     windowShift = __builtin_ctz(windowSize);
 
@@ -182,6 +186,11 @@ public:
   }
 
   inline MapperWindow *selectedRegister(BusSignals bus) {
+#ifdef UNUSED
+    if (0x6800 <= bus.addr && bus.addr < 0x7000)
+      return nullptr;
+#endif /* UNUSED */
+
     for (unsigned idx = 0; idx < windowCount; idx++) {
       if (windows[idx].reg_base <= bus.addr && bus.addr < windows[idx].reg_top)
         return &windows[idx];
@@ -199,7 +208,7 @@ public:
   inline void remap(BusSignals bus) {
     MapperWindow *window = selectedRegister(bus);
     if (window != nullptr)
-      window->bank = bus.data % bankCount;
+      window->bank = bus.data & (bankCount - 1);
     return;
   }
 
