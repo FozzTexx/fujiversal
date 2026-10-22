@@ -57,7 +57,8 @@ idle:
 	out x, NUM_PINS		; grab the two /CTS /SCS bits we want
 	jmp !x idle		; if X is zero then /CTS and /SCS are high
 
-	jmp pin send		; If R/W is high no need to wait
+	; Wait for CLOCK on reads too, so the read SM can take a low
+	; CLOCK as "this cycle is over" rather than "not started yet".
 	wait 1 gpio CLOCK_PIN	; wait for CLOCK
 
 send:
@@ -127,9 +128,13 @@ void send_bus_init_setup(sm_setup_t *setup)
 
 	mov y, null                    ; y = 0, the "deselected" comparator
 .wrap_target
+check_fifo:
 	pull block                     ; get byte to write
-	out pins, DATA_WIDTH           ; write byte to GPIO D0-D7
+	out pins, DATA_WIDTH           ; stage byte on D0-D7 (still inputs, Hi-Z)
 	mov osr, ~null                 ; put a whole bunch of 1s in OSR
+	jmp pin drive                  ; CLOCK still high: the cycle is ours
+	jmp check_fifo                 ; CLOCK low: missed the cycle, drop the byte
+drive:
 	out pindirs, DATA_WIDTH        ; change D0-D7 to outputs
 
 	; Release only once E is low and we're deselected: the 6809
