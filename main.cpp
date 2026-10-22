@@ -38,12 +38,12 @@
 #define IO_TOP     (IO_BASE + 4)
 #endif
 
-#define IO_FLAG_USERROM_READY	 0x40
-#define IO_FLAG_ROM_MODE_CMD	 0b00000100
-#define IO_FLAG_USERROM_ENABLE	 0b00000001
+#define IO_FLAG_USERROM_READY    0x40
+#define IO_FLAG_ROM_MODE_CMD     0b00000100
+#define IO_FLAG_USERROM_ENABLE   0b00000001
 #define IO_FLAG_AUTOSTART_ENABLE 0b00000010
-#define IO_FLAG_ROM_BANK_CMD	 0b10000000
-#define IO_MASK_ROM_BANK	 0b00001111
+#define IO_FLAG_ROM_BANK_CMD     0b10000000
+#define IO_MASK_ROM_BANK         0b00001111
 
 #define DEFAULT_ROM disk_rom
 
@@ -285,7 +285,7 @@ void __time_critical_func(romulan)(void)
       case IO_CONTROL: // Write control reg
         diag_count_ioctl();
         // Command to enable/disable user ROM, or enable/disable ROM autostart
-      	if (bus.data & IO_FLAG_ROM_MODE_CMD) {
+        if (bus.data & IO_FLAG_ROM_MODE_CMD) {
           // Enable/disable user ROM
           if (bus.data & IO_FLAG_USERROM_ENABLE) {
             user_rom.activate();
@@ -316,7 +316,7 @@ void __time_critical_func(romulan)(void)
             rom_ptr = DEFAULT_ROM;
             mapper.deactivate();
           }
-       	}
+        }
         else if (bus.data & IO_FLAG_ROM_BANK_CMD) {
           user_rom.selectSegment(bus.data);
           rom_ptr = user_rom.activeBase;
