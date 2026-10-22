@@ -286,7 +286,11 @@ public:
   }
 
   static inline bool isWrite(BusSignals bus) {
+#ifdef RD_PIN
     return bus.rd;
+#else
+    return !bus.rw;
+#endif // RD_PIN
   }
 
   inline bool isRemap(BusSignals bus) {
