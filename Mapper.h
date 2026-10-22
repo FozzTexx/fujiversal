@@ -76,7 +76,6 @@ public:
     _type = type;
 
 
-#define FORCED_ROM_TYPE ROM_TYPE_MSX_KONAMI
 #ifdef FORCED_ROM_TYPE
     /*****************************/
     _type = FORCED_ROM_TYPE;
@@ -161,7 +160,7 @@ public:
 
         addMirror({
             .mirror_base = 0x0000,
-            .mirror_top  = 0x2000,
+            .mirror_top  = 0x4000,
             .source      = 0x4000,
           });
         addMirror({
