@@ -5,6 +5,7 @@
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
+#include "diag_uart.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -25,6 +26,8 @@
 #include <hardware/irq.h>
 #include <hardware/watchdog.h>
 #include <hardware/clocks.h>
+#include <hardware/vreg.h>
+#include <hardware/sync.h>
 #include <tusb.h>
 
 #include <string>
@@ -43,6 +46,16 @@
 #define IO_MASK_ROM_BANK	 0b00001111
 
 #define DEFAULT_ROM disk_rom
+
+// A ROM must not drive the bus while the CPU is writing.
+#if defined(BOARD_coco_proto_260402) || defined(BOARD_picorom_coco)
+// CTS also covers $8000-$BFFF in the CoCo 3's 32K external ROM mode; $FF00 up
+// is I/O whichever mode. Constants: the read path cannot afford loads.
+#define IS_ROM_READ(b) \
+  (!Mapper::isWrite(b) && 0x8000 <= (b).addr && (b).addr < BUS_ROM_TOP)
+#else
+#define IS_ROM_READ(b) (!Mapper::isWrite(b) && mapper.isMapped(b, user_rom))
+#endif
 
 #define USE_IRQ 0
 
@@ -77,6 +90,13 @@ pio_sm_t state_machine[3];
 
 UserROM user_rom;
 Mapper mapper;
+
+#if defined(BOARD_coco_proto_260402) || defined(BOARD_picorom_coco)
+// Reads served since the cart was switched on. A BASIC signature probe reads
+// a handful; real execution reads thousands.
+volatile uint32_t served_reads = 0;
+volatile uint32_t user_rom_len = 0;
+#endif
 
 #ifdef BOARD_coco_proto_260402
 // Power-on-like Program Pak boot: on user-ROM enable we point rom_ptr at the
@@ -198,7 +218,7 @@ void setup_pio_irq_logic()
 void __time_critical_func(romulan)(void)
 {
   BusSignals bus;
-  uint32_t rom_size = POW2_CEIL(sizeof(DEFAULT_ROM));
+  uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(DEFAULT_ROM));
   uint8_t *rom_ptr = DEFAULT_ROM;
   uint32_t last_bus_state = -1;
 
@@ -221,11 +241,27 @@ void __time_critical_func(romulan)(void)
                  bus.addr, bus.data, 0, bus.scs, bus.rw, bus.unused, bus.combined);
 #endif
 
-    if (!user_rom.isActive() && rom_ptr != DEFAULT_ROM)
-      rom_ptr = DEFAULT_ROM;
+    bool active = user_rom.isActive();
+    if (!active) {
+      if (rom_ptr != DEFAULT_ROM) {
+        rom_ptr = DEFAULT_ROM;
+        mapper.deactivate();
+      }
+    }
+    // Reads come first once the user ROM is on. Inactive, the IO registers
+    // take precedence: on MSX they sit inside the ROM window.
+    else if (IS_ROM_READ(bus)) {
+      rom_offset = mapper.calculateOffset(bus);
+      bus.data = rom_ptr[rom_offset];
+      pio_put_fifo(PSM_READ, bus.data);
+#if defined(BOARD_coco_proto_260402) || defined(BOARD_picorom_coco)
+      served_reads = served_reads + 1;
+#endif
+      last_bus_state = bus.combined;
+      continue;
+    }
 
-    // FIXME - only check IO_BASE if rom_ptr == ROM
-    if (!user_rom.isActive() && IO_BASE <= bus.addr && bus.addr < IO_TOP) {
+    if (!active && IO_BASE <= bus.addr && bus.addr < IO_TOP) {
       unsigned io_reg = (bus.addr - IO_BASE) & 0x3;
 #ifdef RW_PIN
       if (!bus.rw)
@@ -247,6 +283,7 @@ void __time_critical_func(romulan)(void)
         break;
 
       case IO_CONTROL: // Write control reg
+        diag_count_ioctl();
         // Command to enable/disable user ROM, or enable/disable ROM autostart
       	if (bus.data & IO_FLAG_ROM_MODE_CMD) {
           // Enable/disable user ROM
@@ -254,6 +291,10 @@ void __time_critical_func(romulan)(void)
             user_rom.activate();
             mapper.activate();
             rom_ptr = user_rom.activeBase;
+#if defined(BOARD_coco_proto_260402) || defined(BOARD_picorom_coco)
+            served_reads = 0;
+#endif
+            diag_mount_begin();
             if (bus.data & IO_FLAG_AUTOSTART_ENABLE) {
 #ifdef BOARD_coco_proto_260402
               // Enable auto start (CoCo)
@@ -262,6 +303,7 @@ void __time_critical_func(romulan)(void)
               // routine autostarts the cartridge.
               cart_toggle_active = true;
               cart_toggle_start_ms = to_ms_since_boot(get_absolute_time());
+              diag_count_reset();
               gpio_put(RESET_PIN, 0);
               gpio_set_dir(RESET_PIN, GPIO_OUT);   // assert RESET low
               reset_active = true;
@@ -272,6 +314,7 @@ void __time_critical_func(romulan)(void)
           else {
             user_rom.deactivate();
             rom_ptr = DEFAULT_ROM;
+            mapper.deactivate();
           }
        	}
         else if (bus.data & IO_FLAG_ROM_BANK_CMD) {
@@ -281,25 +324,13 @@ void __time_critical_func(romulan)(void)
         break;
       }
     }
-#ifdef RD_PIN
-    else if (user_rom.isActive() && mapper.isRemap(bus)) {
+    else if (active && mapper.isRemap(bus)) {
       mapper.remap(bus);
     }
-#endif
-    else if (mapper.isMapped(bus, user_rom)) {
-      unsigned rom_offset;
-
-
-#ifndef RD_PIN
-      // No banking hardware: serve directly to keep the response path short
-      rom_offset = bus.addr - BUS_ROM_BASE;
+    else if (IS_ROM_READ(bus)) {
+      rom_offset = mapper.calculateOffset(bus);
       bus.data = rom_ptr[rom_offset];
       pio_put_fifo(PSM_READ, bus.data);
-#else
-      rom_offset = mapper.calculateOffset(bus, user_rom);
-      bus.data = rom_ptr[rom_offset];
-      pio_put_fifo(PSM_READ, bus.data);
-#endif // RD_PIN
     }
 
     last_bus_state = bus.combined;
@@ -374,6 +405,19 @@ bool process_command(ByteBuffer &buffer)
   case FUJICMD_CLOSE:
     {
       size_t size = user_rom.close();
+#if defined(BOARD_coco_proto_260402) || defined(BOARD_picorom_coco)
+      // The host sends no ROM type, so classify by size. It cannot tell a
+      // banked 32K cart from a flat one; none is known.
+      if (mapper.type() == ROM_TYPE_UNKNOWN && size > 0) {
+        if (size <= SIZE_32K)
+          mapper.setROMType(ROM_TYPE_COCO_32K_FF90);
+        else if (size <= 2 * SIZE_32K)
+          mapper.setROMType(ROM_TYPE_COCO_64K_FF90);
+        else
+          mapper.setROMType(ROM_TYPE_COCO_128K_FF90);
+      }
+      user_rom_len = size;
+#endif
       if (size > 0)
         mapper.setROMSize(size);
       sendReplyPacket(packet->device(), size > 0, nullptr, 0);
@@ -409,7 +453,17 @@ int main()
   ByteBuffer command_buf;
 
 
+#ifdef BOARD_coco_proto_260402
+  // Needed to serve the cart bus at 2MHz. Voltage must come up first and
+  // settle; the clock alone leaves the chip unstable. Non-panicking form so a
+  // failed request cannot hang before USB is up.
+  vreg_set_voltage(VREG_VOLTAGE_1_20);
+  sleep_ms(10);
+  if (!set_sys_clock_khz(300000, false))
+    set_sys_clock_khz(250000, true);
+#else
   set_sys_clock_khz(250000, true);
+#endif
 
 #ifdef LED_PIN
   gpio_init(LED_PIN);
@@ -447,6 +501,11 @@ int main()
     if (!serial_ready && now - loop_begin > SERIAL_BEGIN_DELAY)
       serial_ready = true;
 
+#if defined(BOARD_coco_proto_260402) || defined(BOARD_picorom_coco)
+    diag_poll(now, user_rom.isActive(), user_rom_len, mapper.mask(),
+              mapper.banks(), mapper.type());
+#endif
+
 #ifdef BOARD_coco_proto_260402
     // Release RESET once the pulse has elapsed (open-drain: back to input) so
     // the CoCo boots from a clean hardware reset. Unsigned delta is
@@ -461,7 +520,7 @@ int main()
     // FIRQs don't disrupt a later CFGLOAD/CONFIG.BIN boot. Unsigned delta is
     // wraparound-safe.
     if (cart_toggle_active) {
-      if (now - cart_toggle_start_ms >= CART_TOGGLE_MS) {
+      if (served_reads > 256 || now - cart_toggle_start_ms >= CART_TOGGLE_MS) {
         cart_toggle_active = false;
         gpio_put(CART_PIN, 1);
       }

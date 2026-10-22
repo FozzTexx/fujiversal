@@ -9,6 +9,7 @@
 #define R_PG1  0b00100000
 #define R_PG2  0b01000000
 #define R_PG3  0b01100000
+#define R_COCO 0b11000000
 
 enum fujiROMType_t : uint8_t {
     ROM_TYPE_UNKNOWN          = 0x00,
@@ -37,6 +38,12 @@ enum fujiROMType_t : uint8_t {
     ROM_TYPE_MSX_ASCII8       = 0x01 | R_8K  | R_PG1,
     ROM_TYPE_MSX_KONAMI       = 0x02 | R_8K  | R_PG1,
     ROM_TYPE_MSX_KONAMI_SCC   = 0x03 | R_8K  | R_PG1,
+    // ----------------------------------------
+    // CoCo ROM Types
+    //
+    ROM_TYPE_COCO_32K_FF90    = 0x01 | R_COCO,
+    ROM_TYPE_COCO_64K_FF90    = 0x02 | R_COCO,
+    ROM_TYPE_COCO_128K_FF90   = 0x03 | R_COCO,
     // ----------------------------------------
 };
 

@@ -15,6 +15,7 @@
 
 #define SIZE_8K   0x2000
 #define SIZE_16K  0x4000
+#define SIZE_32K  0x8000
 
 class UserROM
 {
