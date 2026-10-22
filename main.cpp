@@ -286,7 +286,7 @@ void __time_critical_func(romulan)(void)
       mapper.remap(bus);
     }
 #endif
-    else if ((BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP)) {
+    else if (mapper.isMapped(bus, user_rom)) {
       unsigned rom_offset;
 
 

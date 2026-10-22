@@ -5,6 +5,7 @@
 
 #include <array>
 #include <vector>
+#include <climits>
 
 /*
   ## How Mapping Works
@@ -46,7 +47,6 @@ private:
   struct MapperWindow {
     uint32_t reg_base, reg_top;
     uint32_t window_base, window_top;
-    uint8_t mirror;
     uint8_t bank;
   };
 
@@ -57,14 +57,15 @@ private:
 
   std::array<MapperWindow, MAX_WINDOWS> windows; // std::vector is too slow
   unsigned windowCount = 0;
-  unsigned windowBase = 0, windowTop = 0;
   uint16_t windowSize = ROM_SEG_SIZE;
   uint16_t windowShift = __builtin_ctz(ROM_SEG_SIZE);
 
   std::array<MapperMirror, MAX_WINDOWS> mirrors;
   unsigned mirrorCount = 0;
 
-  unsigned registerBase = 0, registerTop = 0;
+  unsigned windowBase = UINT_MAX, windowTop = 0;
+  unsigned registerBase = UINT_MAX, registerTop = 0;
+  unsigned mappedBase = UINT_MAX, mappedTop = 0;
 
   uint16_t bankCount = 1;
 
@@ -75,6 +76,7 @@ public:
     _type = type;
 
 
+#define FORCED_ROM_TYPE ROM_TYPE_MSX_KONAMI
 #ifdef FORCED_ROM_TYPE
     /*****************************/
     _type = FORCED_ROM_TYPE;
@@ -226,36 +228,50 @@ public:
     windows.fill({});
     windowCount = 0;
     mirrorCount = 0;
+
+    windowBase = UINT_MAX;
+    windowTop = 0;
+    registerBase = UINT_MAX;
+    registerTop = 0;
+    mappedBase = UINT_MAX;
+    mappedTop = 0;
+
+    return;
+  }
+
+  static void extend(unsigned &base, unsigned &top, unsigned new_base, unsigned new_top) {
+    if (new_base < base)
+      base = new_base;
+    if (new_top > top)
+      top = new_top;
     return;
   }
 
   void addWindow(MapperWindow window) {
     // FIXME - keep windows sorted by window_base
     windows[windowCount] = window;
+
+    extend(windowBase, windowTop,
+           windows[windowCount].window_base, windows[windowCount].window_top);
+    extend(mappedBase, mappedTop, windowBase, windowTop);
+    if (windows[windowCount].reg_base != windows[windowCount].reg_top) {
+      extend(registerBase, registerTop,
+             windows[windowCount].reg_base, windows[windowCount].reg_top);
+    }
+
     windowCount += 1;
     windowSize = windows[0].window_top - windows[0].window_base;
     windowShift = __builtin_ctz(windowSize);
-
-    registerBase = windows[0].reg_base;
-    registerTop = windows[0].reg_top;
-    windowBase = windows[0].window_base;
-    windowTop = windows[0].window_top;
-    for (size_t idx = 1; idx < windowCount; idx++) {
-      if (windows[idx].reg_base < registerBase)
-        registerBase = windows[idx].reg_base;
-      if (windows[idx].reg_top > registerTop)
-        registerTop = windows[idx].reg_top;
-      if (windows[idx].window_base < windowBase)
-        windowBase = windows[idx].window_base;
-      if (windows[idx].window_top > windowTop)
-        windowTop = windows[idx].window_top;
-    }
     return;
   }
 
   void addMirror(MapperMirror mirror) {
     // FIXME - keep mirrors sorted by mirror_base
     mirrors[mirrorCount] = mirror;
+
+    extend(mappedBase, mappedTop,
+           mirrors[mirrorCount].mirror_base, mirrors[mirrorCount].mirror_top);
+
     mirrorCount += 1;
     return;
   }
@@ -280,6 +296,12 @@ public:
 
   inline bool isWindow(BusSignals bus) {
     return windowBase <= bus.addr && bus.addr < windowTop;
+  }
+
+  inline bool isMapped(BusSignals bus, UserROM &user_rom) {
+    if (user_rom.isActive())
+      return mappedBase <= bus.addr && bus.addr < mappedTop;
+    return BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP;
   }
 
   inline MapperWindow *selectedRegister(BusSignals bus) {
