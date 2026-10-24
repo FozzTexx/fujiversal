@@ -1,10 +1,10 @@
 #include "setup_sm.h"
 #include "board_defs.h"
 #include "UserROM.h"
+#include "Mapper.h"
 #include "FujiBusPacket.h"
 #include "fujiDeviceID.h"
 #include "fujiCommandID.h"
-#include "fujiROMType.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -35,12 +35,12 @@
 #define IO_TOP     (IO_BASE + 4)
 #endif
 
-#define IO_FLAG_USERROM_READY	 0x40
-#define IO_FLAG_ROM_MODE_CMD	 0b00000100
-#define IO_FLAG_USERROM_ENABLE	 0b00000001
+#define IO_FLAG_USERROM_READY    0x40
+#define IO_FLAG_ROM_MODE_CMD     0b00000100
+#define IO_FLAG_USERROM_ENABLE   0b00000001
 #define IO_FLAG_AUTOSTART_ENABLE 0b00000010
-#define IO_FLAG_ROM_BANK_CMD	 0b10000000
-#define IO_MASK_ROM_BANK	 0b00001111
+#define IO_FLAG_ROM_BANK_CMD     0b10000000
+#define IO_MASK_ROM_BANK         0b00001111
 
 #define DEFAULT_ROM disk_rom
 
@@ -75,8 +75,8 @@ pio_sm_t state_machine[3];
       }                                                 \
     })
 
-
 UserROM user_rom;
+Mapper mapper;
 
 #ifdef BOARD_coco_proto_260402
 // Power-on-like Program Pak boot: on user-ROM enable we point rom_ptr at the
@@ -198,11 +198,10 @@ void setup_pio_irq_logic()
 void __time_critical_func(romulan)(void)
 {
   BusSignals bus;
-  uint32_t rom_offset, rom_size = POW2_CEIL(sizeof(DEFAULT_ROM));
+  uint32_t rom_size = POW2_CEIL(sizeof(DEFAULT_ROM));
   uint8_t *rom_ptr = DEFAULT_ROM;
   uint32_t last_bus_state = -1;
-  uint8_t bank = 0;
-  bool switch_bank = false;
+
 
   setup_pio_irq_logic();
 
@@ -249,10 +248,11 @@ void __time_critical_func(romulan)(void)
 
       case IO_CONTROL: // Write control reg
         // Command to enable/disable user ROM, or enable/disable ROM autostart
-      	if (bus.data & IO_FLAG_ROM_MODE_CMD) {
+        if (bus.data & IO_FLAG_ROM_MODE_CMD) {
           // Enable/disable user ROM
           if (bus.data & IO_FLAG_USERROM_ENABLE) {
             user_rom.activate();
+            mapper.activate();
             rom_ptr = user_rom.activeBase;
             if (bus.data & IO_FLAG_AUTOSTART_ENABLE) {
 #ifdef BOARD_coco_proto_260402
@@ -273,7 +273,7 @@ void __time_critical_func(romulan)(void)
             user_rom.deactivate();
             rom_ptr = DEFAULT_ROM;
           }
-       	}
+        }
         else if (bus.data & IO_FLAG_ROM_BANK_CMD) {
           user_rom.selectSegment(bus.data);
           rom_ptr = user_rom.activeBase;
@@ -282,74 +282,22 @@ void __time_critical_func(romulan)(void)
       }
     }
 #ifdef RD_PIN
-    else if (bus.rd && user_rom.isActive() && (0x4000 <= bus.addr) && (bus.addr < 0xC000)) {
-      switch_bank = false;
-      switch (user_rom._type) {
-        case ROM_TYPE_MSX_ASCII8:
-          if ((0x6000 <= bus.addr) && (bus.addr < 0x8000)) {
-            // 0x6000 = 0, 0x6800 = 1, 0x7000 = 2, 0x7800 = 3
-            bank = (bus.addr >> 11) & 3;
-            switch_bank = true;
-          }
-          break;
-        case ROM_TYPE_MSX_ASCII16:
-          if ((0x6000 <= bus.addr) && (bus.addr < 0x7800) && !(bus.addr & 0x0800)) {
-            // 0x6000 = 0, 0x7000 = 1
-            bank = (bus.addr >> 12) & 1;
-            switch_bank = true;
-          }
-          break;
-        case ROM_TYPE_MSX_KONAMI:
-          // [0x4000..0x6000) is fixed at segment 0.
-          if (0x6000 <= bus.addr && bus.addr < 0xC000) {
-            // 0x6000 = 3, 0x8000 = 4, 0xA000 = 5
-            // subtract 2 because ROM starts at 0x4000
-            bank = (bus.addr >> 13) - 2;
-            switch_bank = true;
-          }
-          break;
-        case ROM_TYPE_MSX_KONAMI_SCC:
-          if (0x5000 <= bus.addr && bus.addr < 0xC000 && (bus.addr & 0x1800) == 0x1000) {
-            // 0x5000 = 2, 0x7000 = 3, 0x9000 = 4, 0xB000 = 5
-            // subtract 2 because ROM starts at 0x4000
-            bank = (bus.addr >> 13) - 2;
-            switch_bank = true;
-            // TODO: if bank = 4 clear SCC cache
-          }
-          break;
-        default:
-          break;
-      }
-      if (switch_bank)
-        user_rom.bankOffset[bank] = (bus.data % user_rom.bankCount) * user_rom.bankSize;
+    else if (user_rom.isActive() && mapper.isRemap(bus)) {
+      mapper.remap(bus);
     }
 #endif
-    else if ((BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP)) {
+    else if (mapper.isMapped(bus, user_rom)) {
+      unsigned rom_offset;
+
+
 #ifndef RD_PIN
       // No banking hardware: serve directly to keep the response path short
       rom_offset = bus.addr - BUS_ROM_BASE;
       bus.data = rom_ptr[rom_offset];
       pio_put_fifo(PSM_READ, bus.data);
 #else
-      rom_offset = bus.addr;
-
-      if (user_rom._type == ROM_TYPE_MSX_KONAMI) {
-        // [0x0000, 0x4000) mirrors [0x4000, 0x8000)
-        if (bus.addr < 0x4000) rom_offset += 0x4000;
-        // [0xC000, 0x10000) mirrors [0x8000, 0xC000)
-        else if (bus.addr >= 0xC000) rom_offset -= 0x4000;
-      }
-      else if (user_rom._type == ROM_TYPE_MSX_KONAMI_SCC) {
-        // [0x0000, 0x4000) mirrors [0xC000, 0x10000)
-        if (bus.addr < 0x4000) rom_offset += 0x8000;
-        // [0xC000, 0x10000) mirrors [0x4000, 0x8000)
-        else if (bus.addr >= 0xC000) rom_offset -= 0x8000;
-      }
-
-      rom_offset -= BUS_ROM_BASE;
-      bank = rom_offset >> (12 + (user_rom.bankSize >> 13));
-
-      bus.data = rom_ptr[rom_offset + user_rom.bankOffset[bank] - bank * user_rom.bankSize];
+      rom_offset = mapper.calculateOffset(bus, user_rom);
+      bus.data = rom_ptr[rom_offset];
       pio_put_fifo(PSM_READ, bus.data);
 #endif // RD_PIN
     }
@@ -401,11 +349,13 @@ bool process_command(ByteBuffer &buffer)
     if (packet->paramCount() < 1)
       sendReplyPacket(packet->device(), false, nullptr, 0);
     else {
+      user_rom.open(packet->param(0));
+
       fujiROMType_t type = ROM_TYPE_UNKNOWN;
       if (packet->paramCount() > 1)
         type = (fujiROMType_t) packet->param(1);
-      user_rom.open(packet->param(0), type);
-      user_rom.resetBankOffsets();
+      mapper.setROMType(type);
+
       sendReplyPacket(packet->device(), true, nullptr, 0);
 #if VERBOSE_DEBUG
       DEBUG_PRINTF("Opening RAM at 0x%04x\n", offset);
@@ -422,18 +372,24 @@ bool process_command(ByteBuffer &buffer)
     break;
 
   case FUJICMD_CLOSE:
-    sendReplyPacket(packet->device(), user_rom.close().is_success(), nullptr, 0);
+    {
+      size_t size = user_rom.close();
+      if (size > 0)
+        mapper.setROMSize(size);
+      sendReplyPacket(packet->device(), size > 0, nullptr, 0);
 #if VERBOSE_DEBUG
-    DEBUG_PRINTF("Closing RAM %d\n", user_rom.closed);
+      DEBUG_PRINTF("Closing RAM %d\n", user_rom.closed);
 #endif // VERBOSE_DEBUG
+    }
     break;
 
   case FUJICMD_RESET:
     user_rom.reset();
+    sendReplyPacket(packet->device(), true, nullptr, 0);
     break;
 
   default:
-    // FIXME - nak
+    sendReplyPacket(packet->device(), false, nullptr, 0);
     break;
   }
 
@@ -452,7 +408,6 @@ int main()
   bool our_command = false, serial_ready = false;
   ByteBuffer command_buf;
 
-  user_rom.resetBankOffsets();
 
   set_sys_clock_khz(250000, true);
 

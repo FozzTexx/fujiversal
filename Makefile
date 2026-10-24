@@ -17,7 +17,7 @@ ROM_H = $(BUILD_DIR)/rom.h
 UF2_BINARY = $(BUILD_DIR)/fujiversal_$(BOARD).uf2
 
 SRC = main.cpp board_defs.h setup_sm.cpp setup_sm.h FujiBusPacket.cpp	\
-      FujiBusPacket.h UserROM.h UserROM.cpp fujiDeviceID.h		\
+      FujiBusPacket.h UserROM.h UserROM.cpp Mapper.h fujiDeviceID.h	\
       fujiCommandID.h diag_uart.cpp diag_uart.h $(ROM_H)
 
 $(BUILD_DIR)/$(FIRMWARE): $(SRC) $(BUILD_MAKE)

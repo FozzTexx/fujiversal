@@ -2,7 +2,11 @@
 
 #include <cstring>
 
+#ifdef OBSOLETE
 void UserROM::open(unsigned seg, fujiROMType_t type)
+#else
+void UserROM::open(unsigned seg)
+#endif /* OBSOLETE */
 {
   size_t offset;
 
@@ -10,8 +14,10 @@ void UserROM::open(unsigned seg, fujiROMType_t type)
   offset = _openSegment * ROM_SEG_SIZE;
   offset %= sizeof(_romData);
   _writePos = _openSegment * ROM_SEG_SIZE;
+#ifdef OBSOLETE
   _type = type;
   bankSize = _type & 0x80 ? SIZE_16K : SIZE_8K;
+#endif /* OBSOLETE */
 
   return;
 }
@@ -41,17 +47,34 @@ error_is_true UserROM::write(const ByteBuffer &data)
   RETURN_SUCCESS_AS_FALSE();
 }
 
+#ifdef OBSOLETE
 error_is_true UserROM::close(void)
+#else
+size_t UserROM::close(void)
+#endif /* OBSOLETE */
 {
-  if (_writePos < 0)
-    RETURN_ERROR_AS_TRUE();
+  size_t size, offset;
 
-  size_t offset = _openSegment * ROM_SEG_SIZE;
-  _segmentSize[_openSegment] = _writePos - offset;
+
+  if (_writePos < 0)
+#ifdef OBSOLETE
+    RETURN_ERROR_AS_TRUE();
+#else
+    return 0;
+#endif /* OBSOLETE */
+
+  offset = _openSegment * ROM_SEG_SIZE;
+  size = _segmentSize[_openSegment] = _writePos - offset;
+#ifdef OBSOLETE
   bankCount = std::max<uint16_t>(1, (_segmentSize[_openSegment] + bankSize - 1) / bankSize);
+#endif /* OBSOLETE */
   _writePos = _openSegment = -1;
 
+#ifdef OBSOLETE
   RETURN_SUCCESS_AS_FALSE();
+#else
+  return size;
+#endif /* OBSOLETE */
 }
 
 void UserROM::reset(void)
@@ -59,10 +82,13 @@ void UserROM::reset(void)
   deactivate();
   _writePos = _openSegment = -1;
   _selectedSegment = 0;
+#ifdef OBSOLETE
   bankCount = 1;
+#endif /* OBSOLETE */
   return;
 }
 
+#ifdef OBSOLETE
 void UserROM::resetBankOffsets(void)
 {
   unsigned idx, offset;
@@ -72,3 +98,4 @@ void UserROM::resetBankOffsets(void)
     bankOffset[idx] = offset;
   return;
 }
+#endif /* OBSOLETE */
