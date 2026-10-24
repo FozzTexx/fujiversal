@@ -286,10 +286,12 @@ public:
   }
 
   static inline bool isWrite(BusSignals bus) {
-#ifdef RD_PIN
+#if defined(RD_PIN)
     return bus.rd;
-#else
+#elif defined(RW_PIN)
     return !bus.rw;
+#else
+    return 0;
 #endif // RD_PIN
   }
 
