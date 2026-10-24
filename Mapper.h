@@ -302,7 +302,7 @@ public:
   }
 
   inline bool isMapped(BusSignals bus, UserROM &user_rom) {
-    if (user_rom.isActive())
+    if (user_rom.isActive() && windowCount)
       return mappedBase <= bus.addr && bus.addr < mappedTop;
     return BUS_ROM_BASE <= bus.addr && bus.addr < BUS_ROM_TOP;
   }
