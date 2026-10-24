@@ -155,28 +155,29 @@ class TextFile:
 
     return
 
-  def splitLeadingTab(self, line):
-    """Split line into prefix and suffix, with leading tabs in prefix if
-    they are allowed (such as in Makefiles), otherwise prefix is empty.
+  def splitAllowedTabs(self, line):
+    """Split line into prefix, body and tail. In Makefiles the prefix
+    holds a leading tab and the tail holds a continuation backslash
+    along with any whitespace before it, since tabs are allowed in
+    both places. Otherwise prefix and tail are empty.
 
     """
     prefix = ""
-    suffix = line
+    body = line
+    tail = ""
     if self.allowTabs == TabsOk.Leading:
-      if line and line[0] == '\t':
-        prefix = line[:1]
-        suffix = line[1:]
-    return prefix, suffix
+      if body and body[0] == '\t':
+        prefix = body[:1]
+        body = body[1:]
+      if body.endswith("\\"):
+        stripped = body[:-1].rstrip()
+        tail = body[len(stripped):]
+        body = stripped
+    return prefix, body, tail
 
   @staticmethod
   def nextTabColumn(column):
-    # Move up by tab stop increment
-    next = column + TextFile.TERMCAP_TAB_STOPS
-    # Make an even multiple of number of tab stops
-    next %= TextFile.TERMCAP_TAB_STOPS
-    # Convert into exact terminal column
-    next *= TextFile.TERMCAP_TAB_STOPS
-    return next
+    return (column // TextFile.TERMCAP_TAB_STOPS + 1) * TextFile.TERMCAP_TAB_STOPS
 
   def fixupWhitespace(self):
     """Remove all trailing whitespace and replace tab characters with
@@ -187,12 +188,15 @@ class TextFile:
     for line in self.contents:
       line = line.rstrip()
       if self.allowTabs != TabsOk.AllTabs and "\t" in line:
-        prefix, suffix = self.splitLeadingTab(line)
-        while "\t" in suffix:
-          column = suffix.index("\t")
-          suffix = suffix[:column] \
-            + " " * (self.nextTabColumn(column) - column) + suffix[column + 1:]
-        line = prefix + suffix
+        prefix, body, tail = self.splitAllowedTabs(line)
+        # The prefix is at most one tab, which ends at the first tab stop
+        indent = self.TERMCAP_TAB_STOPS if prefix else 0
+        while "\t" in body:
+          index = body.index("\t")
+          column = indent + index
+          body = body[:index] \
+            + " " * (self.nextTabColumn(column) - column) + body[index + 1:]
+        line = prefix + body + tail
       lines.append(line)
     return lines
 
@@ -273,8 +277,8 @@ class TextFile:
     for line in self.contents:
       trailingStart = len(line.rstrip())
       line = line[:trailingStart]
-      prefix, suffix = self.splitLeadingTab(line)
-      if self.allowTabs != TabsOk.AllTabs and "\t" in suffix:
+      prefix, body, tail = self.splitAllowedTabs(line)
+      if self.allowTabs != TabsOk.AllTabs and "\t" in body:
         errors.add(FormatError.IllegalTabs)
         break
 
@@ -320,7 +324,7 @@ class TextFile:
   @property
   def isMakefile(self):
     for pattern in MAKEFILE_TYPES:
-      if re.match(pattern, str(self.path)):
+      if re.match(pattern, self.path.name):
         return True
     return False
 
