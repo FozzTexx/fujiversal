@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PICO_SDK_VERSION: "2.2.0"
+
+jobs:
+  build:
+    name: Build ${{ matrix.board }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        board:
+          - picorom_msx
+          - picorom_coco
+          - msxrp2350
+          - msx_proto_260402
+          - coco_proto_260402
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake xxd \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+
+      - name: Cache Pico SDK
+        id: pico-sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pico-sdk
+          key: pico-sdk-${{ env.PICO_SDK_VERSION }}
+
+      - name: Fetch Pico SDK
+        if: steps.pico-sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$PICO_SDK_VERSION" \
+            --recurse-submodules --shallow-submodules \
+            https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
+
+      # The Makefile runs tools through the defoogi container wrapper; here
+      # the tools are installed natively, so the wrapper just runs them.
+      - name: Set up build environment
+        run: |
+          echo "PICO_SDK_PATH=$RUNNER_TEMP/pico-sdk" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nexec "$@"\n' > "$RUNNER_TEMP/bin/defoogi"
+          chmod +x "$RUNNER_TEMP/bin/defoogi"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # config-msx.rom comes from fujinet-config and isn't in this repo, so
+      # MSX boards are compiled against a blank placeholder image.
+      - name: Create placeholder MSX ROM
+        if: ${{ !contains(matrix.board, 'coco') }}
+        run: head -c 32768 /dev/zero | tr '\0' '\377' > config-msx.rom
+
+      - name: Build firmware
+        run: make BOARD=${{ matrix.board }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fujiversal_${{ matrix.board }}
+          path: build/${{ matrix.board }}/fujiversal_${{ matrix.board }}.uf2
+          if-no-files-found: error
